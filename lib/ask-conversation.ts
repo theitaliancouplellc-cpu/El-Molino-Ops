@@ -22,7 +22,8 @@ const thanksPatterns=[
   /^(that'?s perfect|that works|works for me|love it)$/,
 ];
 const acknowledgePatterns=[
-  /^(ok|okay|alright|all right|got it|gotcha|understood|i understand|makes sense|that makes sense)$/,
+  /^(ok|okay|alright|all right)( cool| great| perfect| sounds good)?$/,
+  /^(got it|gotcha|understood|i understand|makes sense|that makes sense)$/,
   /^(sounds good|sounds great|sounds perfect|sure thing|fine|fair enough)$/,
   /^(right|correct|exactly|true|agreed|i agree|yessir|for sure)$/,
 ];
