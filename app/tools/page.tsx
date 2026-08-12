@@ -1,12 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ArrowLeft, CalendarDays, Camera, ChevronRight, CircleUserRound, Loader2, Menu as MenuIcon, MessageSquare, ShieldCheck, Wrench, Search } from 'lucide-react';
+import { ArrowLeft, CalendarDays, Camera, ChevronRight, CircleUserRound, Loader2, Menu as MenuIcon, MessageSquare, ShieldCheck, Wrench, ClipboardList } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 type Profile={app_role:'admin'|'manager'|'employee'};
 
 const items=[
+  {href:'/ops',icon:ClipboardList,title:'Operations Center',body:'Handoffs, logs, maintenance, food safety, inventory, training and more'},
   {href:'/capture',icon:Camera,title:'Capture Studio',body:'Camera, video, voice and documents'},
   {href:'/calendar',icon:CalendarDays,title:'Calendar',body:'Tasks, events and recurring operations'},
   {href:'/discussions',icon:MessageSquare,title:'Discussions',body:'Internal manager and team communication'},
