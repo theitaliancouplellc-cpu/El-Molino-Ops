@@ -3,7 +3,6 @@ import './globals.css';
 import './extra.css';
 import './command.css';
 import PWARegister from './pwa-register';
-import NetworkResilience from './network-resilience';
 import GlobalActions from './global-actions';
 import ErrorSanitizer from './error-sanitizer';
 
@@ -32,7 +31,6 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="en">
       <body>
         <PWARegister />
-        <NetworkResilience />
         <ErrorSanitizer />
         <GlobalActions />
         {children}
