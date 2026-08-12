@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import './extra.css';
+import './command.css';
 import PWARegister from './pwa-register';
 import GlobalActions from './global-actions';
 
