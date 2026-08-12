@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from 'node:fs';
 const read=(p:string)=>readFileSync(p,'utf8');
 
 test('critical production routes exist',()=>{
-  for(const p of ['app/ops/page.tsx','app/shift/page.tsx','app/tasks/page.tsx','app/procedures/page.tsx','app/manager/page.tsx','app/my-work/page.tsx','app/capture/page.tsx','app/admin/page.tsx','app/api/health/route.ts'])assert.equal(existsSync(p),true,p);
+  for(const p of ['app/ops/page.tsx','app/ops-record/[id]/page.tsx','app/shift/page.tsx','app/tasks/page.tsx','app/procedures/page.tsx','app/manager/page.tsx','app/my-work/page.tsx','app/capture/page.tsx','app/files/page.tsx','app/saved/page.tsx','app/admin/page.tsx','app/admin/diagnostics/page.tsx','app/api/health/route.ts'])assert.equal(existsSync(p),true,p);
 });
 
 test('iPhone viewport and safe-area protection cannot regress',()=>{
@@ -39,4 +39,25 @@ test('uploads enforce a finite size limit and rollback failed attachment links',
 test('AI actions remain confirmation-gated',()=>{
   const pwa=read('app/pwa-register.tsx');
   assert.match(pwa,/Confirm AI action/);assert.match(pwa,/Manager access is required/);
+});
+
+test('operational record detail preserves attachment favorite and recent workflows',()=>{
+  const detail=read('app/ops-record/[id]/page.tsx');
+  assert.match(detail,/entity_file_links/);
+  assert.match(detail,/createSignedUrl/);
+  assert.match(detail,/favorites/);
+  assert.match(detail,/recent_views/);
+  assert.match(detail,/entityType=ops_record/);
+});
+
+test('saved workspace resolves operational records to stable detail routes',()=>{
+  const saved=read('app/saved/page.tsx');
+  assert.match(saved,/\/ops-record\/\$\{id\}/);
+  assert.match(saved,/favorites/);
+  assert.match(saved,/recent_views/);
+});
+
+test('admin backup includes post-launch operational domains',()=>{
+  const admin=read('app/admin/page.tsx');
+  for(const table of ['ops_records','task_dependencies','entity_file_links','notifications','favorites','recent_views','client_events'])assert.match(admin,new RegExp(`'${table}'`));
 });
