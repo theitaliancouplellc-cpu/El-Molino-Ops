@@ -1,13 +1,16 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ArrowLeft, CalendarDays, Camera, ChevronRight, CircleUserRound, Loader2, Menu as MenuIcon, MessageSquare, ShieldCheck, Wrench, ClipboardList } from 'lucide-react';
+import { ArrowLeft, CalendarDays, Camera, ChevronRight, CircleUserRound, Loader2, Menu as MenuIcon, MessageSquare, ShieldCheck, Wrench, ClipboardList, ClipboardCheck, UserRound, Gauge } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 type Profile={app_role:'admin'|'manager'|'employee'};
 
-const items=[
+const common=[
+  {href:'/shift',icon:ClipboardCheck,title:'Run the Shift',body:'Opening, mid-shift and closing checklist execution'},
+  {href:'/my-work',icon:UserRound,title:'My Work',body:'Your assignments and today’s checklist responsibilities'},
   {href:'/ops',icon:ClipboardList,title:'Operations Center',body:'Handoffs, logs, maintenance, food safety, inventory, training and more'},
+  {href:'/procedures',icon:ClipboardCheck,title:'Procedure Builder',body:'Draft, approve and convert procedures into checklists'},
   {href:'/capture',icon:Camera,title:'Capture Studio',body:'Camera, video, voice and documents'},
   {href:'/calendar',icon:CalendarDays,title:'Calendar',body:'Tasks, events and recurring operations'},
   {href:'/discussions',icon:MessageSquare,title:'Discussions',body:'Internal manager and team communication'},
@@ -20,5 +23,6 @@ export default function ToolsPage(){
   useEffect(()=>{void load()},[]);
   async function load(){const {data:u}=await supabase.auth.getUser();if(!u.user){location.href='/';return;}const {data}=await supabase.from('profiles').select('app_role').eq('id',u.user.id).single();setProfile(data as Profile);setLoading(false);}
   if(loading)return <div className="full-loader"><Loader2 className="spin"/><span>Opening tools…</span></div>;
-  return <div className="app-shell"><header className="topbar"><a className="round-button" href="/" aria-label="Back"><ArrowLeft/></a><div style={{flex:1}}><div className="brand-kicker">El Molino Ops</div><div className="brand-title">Tools</div></div></header><main className="page"><div className="page-heading"><h1>Tools & settings</h1><p>Secondary capabilities stay here instead of crowding the daily workspace.</p></div><div className="settings-list">{items.map(x=>{const Icon=x.icon;return <a className="settings-row" href={x.href} key={x.href}><span className="settings-icon"><Icon/></span><span><b>{x.title}</b><small>{x.body}</small></span><ChevronRight/></a>})}{profile?.app_role==='admin'&&<a className="settings-row" href="/admin"><span className="settings-icon"><ShieldCheck/></span><span><b>Admin Center</b><small>Users, roles, trash, versions, health and backups</small></span><ChevronRight/></a>}</div><div className="install-note"><Wrench/><div><b>App foundation</b><small>These tools are intentionally separated from Today so operational work remains simple.</small></div></div></main></div>;
+  const manager=profile?.app_role==='admin'||profile?.app_role==='manager';
+  return <div className="app-shell"><header className="topbar"><a className="round-button" href="/" aria-label="Back"><ArrowLeft/></a><div style={{flex:1}}><div className="brand-kicker">El Molino Ops</div><div className="brand-title">Tools</div></div></header><main className="page"><div className="page-heading"><h1>Tools & settings</h1><p>Secondary capabilities stay here instead of crowding the daily workspace.</p></div><div className="settings-list">{manager&&<a className="settings-row" href="/manager"><span className="settings-icon"><Gauge/></span><span><b>Manager Overview</b><small>Exceptions, overdue work, shift progress and operational attention</small></span><ChevronRight/></a>}{common.map(x=>{const Icon=x.icon;return <a className="settings-row" href={x.href} key={x.href}><span className="settings-icon"><Icon/></span><span><b>{x.title}</b><small>{x.body}</small></span><ChevronRight/></a>})}{profile?.app_role==='admin'&&<a className="settings-row" href="/admin"><span className="settings-icon"><ShieldCheck/></span><span><b>Admin Center</b><small>Users, roles, trash, versions, health and backups</small></span><ChevronRight/></a>}</div><div className="install-note"><Wrench/><div><b>App foundation</b><small>These tools are intentionally separated from Today so operational work remains simple.</small></div></div></main></div>;
 }
