@@ -36,10 +36,22 @@ function isCapability(q:string){const s=q.toLowerCase().trim().replace(/[?!.,]+$
 function isCapabilityFollowup(q:string,history:HistoryMessage[]){const s=q.toLowerCase();const recent=history.slice(-4).map(m=>m.content.toLowerCase()).join(' ');return /(more detail|more details|go deeper|explain more|what does that mean|tell me more|break that down)/.test(s)&&/(what.*can you do|capabilit|answer questions|rotate among|tasks|procedures)/.test(recent)}
 function isAppQuestion(q:string){return /(this app|the app|el molino ops|feature|functionality|screen|tab|button|setting|notification|task center|calendar|capture studio|knowledge studio|admin center|discussion|account|security|login|password|profile|permission|role|upload|file|camera|voice|search|offline|pwa|home screen|import|export|backup|history|audit|where (do|can|is)|how do i|how can i|can the app|does the app|what does .* do)/i.test(q)}
 function clearlyUnrelated(q:string){return /(weather|bitcoin|president|nba|nfl|movie|anime|stock market|celebrity|space|quantum|politics|election|crypto|football|basketball|baseball)/i.test(q)}
+function basicConversationAnswer(q:string,history:HistoryMessage[]){
+  const s=q.toLowerCase().trim().replace(/[!?.,]+$/g,'');
+  if(/^(hi|hello|hey|hiya|yo|good morning|good afternoon|good evening)$/.test(s))return `Hey. I’m here. What do you want to work on for El Molino today?`;
+  if(/^(how are you|how's it going|hows it going|how are things|what's up|whats up|sup)$/.test(s))return `I’m good and ready to help. What are we working on at El Molino?`;
+  if(/^(thanks|thank you|thx|appreciate it|perfect|awesome|great|nice|cool)$/.test(s))return `Of course. What do you want to tackle next for El Molino?`;
+  if(/^(ok|okay|got it|sounds good|alright|all right|bet|sure)$/.test(s))return `Got it. What do you want to do next?`;
+  if(/^(what now|what next|what should we do next|now what)$/.test(s))return `We can keep building the app, work through restaurant operations, create tasks or procedures, or organize El Molino information. Tell me what you want to tackle next.`;
+  if(/^(bye|goodbye|see you|later|talk later)$/.test(s))return `Got it. I’ll be here when you’re ready to get back to El Molino.`;
+  if(/^(yes|yeah|yep|yup|no|nope|maybe)$/.test(s)&&history.length)return `Got it. Keep going — I’m following the conversation.`;
+  return null;
+}
 function detectAction(q:string):ActionProposal['type']|null{const s=q.toLowerCase();if(/\b(create|make|add|set up|draft)\b.*\b(task|to-do|todo)\b|\bremind (me|us) to\b/.test(s))return 'task';if(/\b(create|make|draft|write|build|turn .* into)\b.*\b(procedure|sop|checklist|opening checklist|closing checklist|side work)\b/.test(s))return 'procedure';if(/\b(save|add|remember|record|store)\b.*\b(knowledge|knowledge base|as knowledge|restaurant knowledge|note)\b/.test(s))return 'knowledge';return null;}
 function parseActionText(text:string,type:ActionProposal['type']){try{const match=text.match(/\{[\s\S]*\}/);if(!match)return {answer:text,action:null};const parsed=JSON.parse(match[0]);const a=parsed?.action;if(!a?.title)return {answer:parsed?.answer||text,action:null};return {answer:String(parsed.answer||`I drafted that ${type}. Review it before creating it.`),action:{type,title:clean(a.title,200),description:clean(a.description,8000)||undefined,content:clean(a.content,12000)||undefined,priority:['low','normal','high','urgent'].includes(a.priority)?a.priority:'normal'} as ActionProposal};}catch{return {answer:text,action:null};}}
 
 function localFallback(question:string,history:HistoryMessage[],knowledge:K[],procedures:P[]){
+  const basic=basicConversationAnswer(question,history);if(basic)return basic;
   if(isCapability(question)||isCapabilityFollowup(question,history))return capabilityDetails();
   const q=question.toLowerCase();
   if(isAppQuestion(`${history.slice(-2).map(m=>m.content).join(' ')} ${question}`)){
@@ -70,6 +82,7 @@ export async function POST(req:Request){
     const procedures=(Array.isArray(body.procedures)?body.procedures.slice(0,100):[]) as P[];
     const history=(Array.isArray(body.history)?body.history:[]).filter((m:any)=>m&&(m.role==='user'||m.role==='assistant')&&typeof m.content==='string').slice(-20).map((m:any)=>({role:m.role,content:clean(m.content,3500)})) as HistoryMessage[];
     if(!question)return NextResponse.json({answer:'Ask me anything about El Molino or this app.',citations:[]});
+    const basic=basicConversationAnswer(question,history);if(basic)return NextResponse.json({answer:basic,citations:[],local:true});
     if(isCapability(question)&&history.length===0)return NextResponse.json({answer:capabilityAnswer(),citations:[]});
     if(isCapabilityFollowup(question,history))return NextResponse.json({answer:capabilityDetails(),citations:[]});
     if(clearlyUnrelated(question))return NextResponse.json({answer:'I’m focused on El Molino and this operations app. Ask me anything related to the restaurant, its operations, people, procedures, menu, data or the app itself.',citations:[]});
@@ -80,7 +93,7 @@ export async function POST(req:Request){
     const proc=procedures.slice(0,40).map(p=>`- ${clean(p.title,160)}: ${clean(p.description,1500)} [${clean(p.status,40)}]`).join('\n');
     const actionType=detectAction(question);
     const actionInstruction=actionType?`The user is asking you to prepare a ${actionType}. Do not claim it is already created. Return ONLY JSON: {"answer":"short natural sentence","action":{"title":"clear title","description":"useful detail","content":"knowledge content if applicable","priority":"normal"}}. For a checklist/procedure, put complete steps in description.`:'';
-    const system=`You are Ask El Molino, the private assistant for El Molino Taqueria's Johns Island operations app. Stay focused on El Molino, its app, operations, employees, procedures, menu, training, vendors, maintenance and restaurant-related work. Treat the conversation as continuous and resolve references like that, it, those, the other one, why, more and go deeper from history. Prefer supplied internal information. Never invent a restaurant fact or completed action. ${actionInstruction}`;
+    const system=`You are Ask El Molino, the private assistant for El Molino Taqueria's Johns Island operations app. Be conversational and natural. Always handle greetings, acknowledgments, thanks, casual follow-ups and normal conversational transitions like a regular assistant. Keep the broader conversation centered on El Molino, its app, operations, employees, procedures, menu, training, vendors, maintenance and restaurant-related work, but do not treat ordinary small talk as a request for restaurant facts. Treat the conversation as continuous and resolve references like that, it, those, the other one, why, more and go deeper from history. Prefer supplied internal information. Never invent a restaurant fact or completed action. ${actionInstruction}`;
     const messages:AIMessage[]=[{role:'system',content:system},...history,{role:'user',content:`${question}\n\nAPP REFERENCE:\n${APP_KNOWLEDGE}\n\nEL MOLINO KNOWLEDGE:\n${context||'(none supplied)'}\n\nPROCEDURES:\n${proc||'(none supplied)'}`}];
     const result=await runFreeAI(messages);
     if(!result)return NextResponse.json({answer:localFallback(question,history,knowledge,procedures),citations:[],degraded:true});
