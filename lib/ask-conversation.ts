@@ -44,15 +44,17 @@ const continuationPatterns=[
   /^(go for it|do it|go ahead|continue|keep going|carry on|proceed|move on)$/,
   /^(next|next step|what'?s next|whats next|then what|and then|so now what|what now|what next)$/,
   /^(more|say more|tell me more( about that)?|go deeper|explain more|break that down|elaborate)$/,
-  /^(can you expand on that|expand on that|can you explain that|what do you mean|how so|why is that)$/,
+  /^(can you expand on that|expand on that|can you explain that|what do you mean|what does that mean|how so|why is that|why|how)$/,
+  /^(what about|how about) .+$/,
 ];
 const capabilityPatterns=[
-  /^(what( all| else)? can you do|what can you help( me)? with|what do you do|help)$/,
-  /^(how can you help( me)?|who are you|what are you capable of|what are your capabilities)$/,
+  /^(?:(?:hi|hello|hey) )?(what( all| else)? can you do|what can you help( me)? with|what do you do|help)$/,
+  /^(?:(?:hi|hello|hey) )?(how can you help( me)?|who are you|what are you capable of|what are your capabilities)$/,
   /^(what can i ask you|how do you work|can you help me|what can i do here)$/,
   /^(what are you able to do|tell me what you can do|how can this help me)$/,
   /^(what can this bot do|what can the assistant do|what can ask ai do|what do you know)$/,
 ];
+const molinoScope=/\b(el molino|restaurant|taqueria|johns island|menu|specials?|guests?|customers?|employees?|staff|servers?|bartenders?|kitchen|food|drink|sales|labor|toast|shift|opening|closing|manager|vendor|maintenance|inventory|recipe|training|task|procedure|app)\b/;
 
 export function basicConversationAnswer(q:string,history:ConversationHistoryMessage[]=[]){
   const s=norm(q);if(!s)return null;
@@ -74,7 +76,7 @@ export function isCapabilityFollowup(q:string,history:ConversationHistoryMessage
   return /(what.*can you do|capabilit|answer questions|rotate among|tasks|procedures|what can this bot do|what can ask ai do)/.test(recent);
 }
 export function clearlyUnrelated(q:string){
-  const s=norm(q);
+  const s=norm(q);if(molinoScope.test(s))return false;
   return /\b(weather|bitcoin|president|nba|nfl|movie|anime|stock market|celebrity|space|quantum|politics|election|crypto|football|basketball|baseball)\b/.test(s);
 }
 export function contextualSearchQuestion(q:string,history:ConversationHistoryMessage[]){
