@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ArrowLeft, CalendarDays, Camera, ChevronRight, CircleUserRound, Loader2, Menu as MenuIcon, MessageSquare, ShieldCheck, Wrench, ClipboardList, ClipboardCheck, UserRound, Gauge, FolderOpen, Activity } from 'lucide-react';
+import { ArrowLeft, CalendarDays, Camera, ChevronRight, CircleUserRound, Loader2, Menu as MenuIcon, MessageSquare, ShieldCheck, Wrench, ClipboardList, ClipboardCheck, UserRound, Gauge, FolderOpen, Activity, Star } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 type Profile={app_role:'admin'|'manager'|'employee'};
@@ -13,6 +13,7 @@ const common=[
   {href:'/procedures',icon:ClipboardCheck,title:'Procedure Builder',body:'Draft, approve and convert procedures into checklists'},
   {href:'/capture',icon:Camera,title:'Capture Studio',body:'Camera, video, voice and documents'},
   {href:'/files',icon:FolderOpen,title:'Files & Media',body:'Private searchable source files and attachment references'},
+  {href:'/saved',icon:Star,title:'Saved & Recent',body:'Bookmarked records and recently viewed work'},
   {href:'/calendar',icon:CalendarDays,title:'Calendar',body:'Tasks, events and recurring operations'},
   {href:'/discussions',icon:MessageSquare,title:'Discussions',body:'Internal manager and team communication'},
   {href:'/menu',icon:MenuIcon,title:'Menu Catalog',body:'Structured products, categories and source data'},
