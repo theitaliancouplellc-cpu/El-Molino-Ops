@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 
 type K = { title?:string; content?:string; status?:string; category?:string|null };
 type P = { title?:string; description?:string|null; status?:string };
@@ -53,6 +54,28 @@ Current known limitations / unfinished production work:
 When asked where something is, explain the shortest navigation path. When asked whether the app can do something, distinguish what is live now from what is planned/incomplete. Never claim an unfinished feature is complete.
 `.trim();
 
+const rate = new Map<string,{count:number;reset:number}>();
+function allowed(userId:string){
+  const now=Date.now();
+  const bucket=rate.get(userId);
+  if(!bucket||bucket.reset<now){rate.set(userId,{count:1,reset:now+60_000});return true;}
+  if(bucket.count>=20)return false;
+  bucket.count+=1;return true;
+}
+
+async function authenticatedUser(req:Request){
+  const auth=req.headers.get('authorization')||'';
+  const accessToken=auth.toLowerCase().startsWith('bearer ')?auth.slice(7).trim():'';
+  if(!accessToken)return null;
+  const url=process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anon=process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if(!url||!anon)return null;
+  const client=createClient(url,anon,{global:{headers:{Authorization:`Bearer ${accessToken}`}},auth:{persistSession:false,autoRefreshToken:false}});
+  const {data,error}=await client.auth.getUser(accessToken);
+  if(error||!data.user)return null;
+  return data.user;
+}
+
 function capabilityAnswer(){
   return `I can help you use the app, find features, explain settings and permissions, answer questions from El Molino's internal information, look up current public El Molino information when needed, and help create procedures, checklists, training material, manager notes and operational plans. You can talk to me naturally and keep asking follow-ups — I should carry the subject forward instead of making you repeat yourself.`;
 }
@@ -87,6 +110,10 @@ function fallbackAppAnswer(question:string,history:HistoryMessage[]){
 
 export async function POST(req:Request){
   try{
+    const user=await authenticatedUser(req);
+    if(!user)return NextResponse.json({answer:'Your session is no longer valid. Please sign in again.',source:'Assistant',citations:[]},{status:401});
+    if(!allowed(user.id))return NextResponse.json({answer:'Too many requests at once. Wait a moment and try again.',source:'Assistant',citations:[]},{status:429});
+
     const length=Number(req.headers.get('content-length')||0);if(length>1_000_000)return NextResponse.json({answer:'That request is too large. Ask a shorter question or process files separately.',source:'Assistant',citations:[]},{status:413});
     const body=await req.json();
     const question=clean(body.question,4000).trim();
