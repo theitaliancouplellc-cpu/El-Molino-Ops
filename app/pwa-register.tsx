@@ -3,6 +3,28 @@
 import { useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 
+type ChatTurn = { role:'user'|'assistant'; content:string };
+
+function visibleConversation(question:string): ChatTurn[] {
+  try {
+    const rows = Array.from(document.querySelectorAll<HTMLElement>('.chat-row'));
+    const history: ChatTurn[] = rows.map(row => {
+      const role: ChatTurn['role'] = row.classList.contains('user') ? 'user' : 'assistant';
+      const bubble = row.querySelector<HTMLElement>('.bubble');
+      if (!bubble) return null;
+      const clone = bubble.cloneNode(true) as HTMLElement;
+      clone.querySelectorAll('.feedback-row,.source-label,button').forEach(x=>x.remove());
+      const content = (clone.textContent || '').replace(/\s+/g,' ').trim();
+      if (!content || content === 'Thinking…') return null;
+      return { role, content };
+    }).filter(Boolean) as ChatTurn[];
+
+    // The optimistic current user message may already be visible. The API receives it separately.
+    if (history.length && history[history.length-1].role === 'user' && history[history.length-1].content.trim() === question.trim()) history.pop();
+    return history.slice(-20);
+  } catch { return []; }
+}
+
 export default function PWARegister() {
   useEffect(() => {
     let registration: ServiceWorkerRegistration | null = null;
@@ -16,23 +38,8 @@ export default function PWARegister() {
         if (url.endsWith('/api/ask') && init?.method?.toUpperCase() === 'POST' && typeof init.body === 'string') {
           const body = JSON.parse(init.body);
           const question = String(body.question || '').trim();
-          const { data: latest } = await supabase
-            .from('ai_messages')
-            .select('conversation_id,role,content,created_at')
-            .in('role', ['user', 'assistant'])
-            .order('created_at', { ascending: false })
-            .limit(20);
-
-          const conversationId = latest?.[0]?.conversation_id;
-          if (conversationId) {
-            const rows = (latest || [])
-              .filter(row => row.conversation_id === conversationId)
-              .reverse()
-              .map(row => ({ role: row.role, content: row.content }))
-              .slice(-12);
-            if (rows.length && rows[rows.length - 1]?.role === 'user' && rows[rows.length - 1]?.content?.trim() === question) rows.pop();
-            body.history = rows;
-          }
+          const history = visibleConversation(question);
+          if (history.length) body.history = history;
           init = { ...init, body: JSON.stringify(body) };
         }
       } catch {}
@@ -59,7 +66,6 @@ export default function PWARegister() {
         .then(async reg => {
           registration = reg;
           await checkForUpdate();
-
           reg.addEventListener('updatefound', () => {
             const worker = reg.installing;
             if (!worker) return;
@@ -69,16 +75,11 @@ export default function PWARegister() {
           });
         })
         .catch(() => undefined);
-
       navigator.serviceWorker.addEventListener('controllerchange', adoptUpdate);
     }
 
-    const updateNetworkState = () => {
-      document.documentElement.dataset.network = navigator.onLine ? 'online' : 'offline';
-    };
-    const checkWhenVisible = () => {
-      if (document.visibilityState === 'visible') void checkForUpdate();
-    };
+    const updateNetworkState = () => { document.documentElement.dataset.network = navigator.onLine ? 'online' : 'offline'; };
+    const checkWhenVisible = () => { if (document.visibilityState === 'visible') void checkForUpdate(); };
     const checkOnPageShow = () => void checkForUpdate();
     const checkOnFocus = () => void checkForUpdate();
 
