@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { classifyProviderFailure, configuredFreeProviders } from '../lib/free-ai-router.ts';
+import { classifyProviderFailure, configuredFreeProviders, resetAIRouterStateForTests, runLanePlan, type AILane } from '../lib/free-ai-router.ts';
 
 test('429 becomes short quota cooldown', () => {
   const r = classifyProviderFailure(429, 'rate limit exceeded', 2500);
@@ -28,4 +28,48 @@ test('server failures are retryable through another lane', () => {
 test('provider config never exposes secret values', () => {
   const result = configuredFreeProviders();
   for (const value of Object.values(result)) assert.equal(typeof value, 'boolean');
+});
+
+function lane(id:string,status:number,text='',detail=''):AILane{
+  return {id,provider:id,model:id,run:async()=>({status,text,detail})};
+}
+
+test('quota exhaustion immediately rotates to next model', async()=>{
+  resetAIRouterStateForTests();
+  const result=await runLanePlan([lane('a',429,'','quota exceeded'),lane('b',200,'working answer')]);
+  assert.equal(result?.provider,'b');
+  assert.equal(result?.text,'working answer');
+  assert.equal(result?.attempts[0].reason,'quota_or_rate_limit');
+  assert.equal(result?.attempts[1].ok,true);
+});
+
+test('invalid provider key cannot block healthy later provider', async()=>{
+  resetAIRouterStateForTests();
+  const result=await runLanePlan([lane('bad-key',401,'','invalid key'),lane('healthy',200,'ok')]);
+  assert.equal(result?.provider,'healthy');
+  assert.equal(result?.attempts[0].reason,'invalid_credentials');
+});
+
+test('provider outage rotates through multiple failures before success', async()=>{
+  resetAIRouterStateForTests();
+  const result=await runLanePlan([lane('down',503,'','offline'),lane('missing-model',404,'','missing'),lane('last',200,'recovered')]);
+  assert.equal(result?.provider,'last');
+  assert.equal(result?.attempts.length,3);
+});
+
+test('all providers unavailable returns null instead of throwing', async()=>{
+  resetAIRouterStateForTests();
+  const result=await runLanePlan([lane('a',429,'','quota'),lane('b',503,'','down'),lane('c',401,'','bad key')]);
+  assert.equal(result,null);
+});
+
+test('failed lane remains on cooldown on next request', async()=>{
+  resetAIRouterStateForTests();
+  await runLanePlan([lane('quota',429,'','quota'),lane('ok',200,'answer')]);
+  let called=0;
+  const quota:AILane={id:'quota',provider:'quota',model:'quota',run:async()=>{called++;return {status:200,text:'should not run'}}};
+  const result=await runLanePlan([quota,lane('ok2',200,'second')]);
+  assert.equal(called,0);
+  assert.equal(result?.provider,'ok2');
+  assert.equal(result?.attempts[0].reason,'cooldown');
 });
