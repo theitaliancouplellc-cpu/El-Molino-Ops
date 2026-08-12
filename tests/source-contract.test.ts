@@ -21,9 +21,9 @@ test('task filter remains visible while AI source routing remains hidden',()=>{
   assert.match(css,/\.task-toolbar \.source-switch\{display:grid!important/);
 });
 
-test('global command palette and safe retry layer are mounted',()=>{
+test('global command palette safe retry and error sanitizer are mounted',()=>{
   const layout=read('app/layout.tsx');
-  assert.match(layout,/GlobalActions/);assert.match(layout,/NetworkResilience/);
+  assert.match(layout,/GlobalActions/);assert.match(layout,/NetworkResilience/);assert.match(layout,/ErrorSanitizer/);
 });
 
 test('build script runs full tests before next build',()=>{
@@ -42,12 +42,20 @@ test('AI actions remain confirmation-gated',()=>{
 });
 
 test('Ask AI always handles basic conversation before knowledge fallback',()=>{
-  const ask=read('app/api/ask/route.ts');
-  assert.match(ask,/function basicConversationAnswer/);
-  assert.match(ask,/Hey\. I’m here\. What do you want to work on for El Molino today\?/);
-  assert.match(ask,/I’m good and ready to help\. What are we working on at El Molino\?/);
+  const ask=read('app/api/ask/route.ts'),conversation=read('lib/ask-conversation.ts');
+  assert.match(ask,/basicConversationAnswer/);
+  assert.match(conversation,/Hey\. I’m here\. What do you want to work on for El Molino today\?/);
+  assert.match(conversation,/I’m good and ready to help\. What are we working on at El Molino\?/);
   assert.match(ask,/const basic=basicConversationAnswer\(question,history\);if\(basic\)return NextResponse\.json/);
   assert.match(ask,/do not treat ordinary small talk as a request for restaurant facts/);
+});
+
+test('raw JWT and database internals are sanitized before reaching users',()=>{
+  const sanitizer=read('app/error-sanitizer.tsx'),layout=read('app/layout.tsx');
+  assert.match(sanitizer,/jwt issued at future/i);
+  assert.match(sanitizer,/friendlyErrorText/);
+  assert.match(sanitizer,/refreshSession/);
+  assert.match(layout,/ErrorSanitizer/);
 });
 
 test('operational record detail preserves attachment favorite and recent workflows',()=>{
