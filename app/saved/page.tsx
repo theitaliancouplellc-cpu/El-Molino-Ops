@@ -8,7 +8,7 @@ type Favorite={entity_type:string;entity_id:string;created_at:string};
 type Recent={entity_type:string;entity_id:string;title:string|null;href:string|null;viewed_at:string};
 type Resolved={entity_type:string;entity_id:string;title:string;href:string;subtitle?:string};
 
-const routeFor=(type:string,id:string)=>type==='ops_record'?`/ops?record=${id}`:type==='procedure'?`/procedures?record=${id}`:type==='file'?'/files':type==='task'?'/tasks':type==='knowledge'?'/':type==='menu_item'?'/menu':'/';
+const routeFor=(type:string,id:string)=>type==='ops_record'?`/ops-record/${id}`:type==='procedure'?`/procedures?record=${id}`:type==='file'?'/files':type==='task'?'/tasks':type==='knowledge'?'/':type==='menu_item'?'/menu':'/';
 
 export default function SavedPage(){
  const [loading,setLoading]=useState(true),[message,setMessage]=useState(''),[favorites,setFavorites]=useState<Favorite[]>([]),[recent,setRecent]=useState<Recent[]>([]),[resolved,setResolved]=useState<Resolved[]>([]),[userId,setUserId]=useState('');
