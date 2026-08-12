@@ -13,7 +13,8 @@
   ],
   "shortcuts": [
     { "name": "Ask El Molino", "short_name": "Ask AI", "url": "/?tab=ai" },
-    { "name": "Operations", "short_name": "Operations", "url": "/?tab=operations" },
-    { "name": "Menu Catalog", "short_name": "Menu", "url": "/menu" }
+    { "name": "Capture", "short_name": "Capture", "url": "/capture" },
+    { "name": "Calendar", "short_name": "Calendar", "url": "/calendar" },
+    { "name": "Tools", "short_name": "Tools", "url": "/tools" }
   ]
 }
