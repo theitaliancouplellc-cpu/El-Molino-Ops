@@ -2,8 +2,7 @@ export type AIRole = 'system' | 'user' | 'assistant';
 export type AIMessage = { role: AIRole; content: string };
 export type AIAttempt = { provider: string; model: string; ok: boolean; status?: number; reason?: string };
 export type AIRouterResult = { text: string; provider: string; model: string; attempts: AIAttempt[] };
-
-type Lane = { id: string; provider: string; model: string; run: () => Promise<{ text: string; status?: number; retryAfterMs?: number; detail?: string }> };
+export type AILane = { id: string; provider: string; model: string; run: () => Promise<{ text: string; status?: number; retryAfterMs?: number; detail?: string }> };
 type RouterState = { cursor: number; cooldowns: Map<string, number> };
 
 const g = globalThis as typeof globalThis & { __elMolinoFreeAI?: RouterState };
@@ -15,6 +14,8 @@ function cleanText(v: unknown) { return String(v ?? '').trim(); }
 function now() { return Date.now(); }
 function cooled(id: string) { return (state.cooldowns.get(id) || 0) > now(); }
 function cool(id: string, ms: number) { state.cooldowns.set(id, now() + Math.max(1000, ms)); }
+
+export function resetAIRouterStateForTests(){ state.cursor=0; state.cooldowns.clear(); }
 
 export function classifyProviderFailure(status: number, body = '', retryAfterMs = 0) {
   const text = body.toLowerCase();
@@ -44,12 +45,12 @@ async function openAICompatible(url: string, key: string, model: string, message
   } catch (e) { return { text: '', status: 599, detail: e instanceof Error ? e.message : 'network_error' }; }
 }
 
-function openRouterLane(messages: AIMessage[]): Lane | null {
+function openRouterLane(messages: AIMessage[]): AILane | null {
   const key = env('OPENROUTER_API_KEY'); if (!key || !boolEnv('OPENROUTER_FREE_ONLY', true)) return null;
   return { id: 'openrouter:free-router', provider: 'OpenRouter Free Router', model: 'openrouter/free', run: () => openAICompatible('https://openrouter.ai/api/v1/chat/completions', key, 'openrouter/free', messages, { 'HTTP-Referer': env('NEXT_PUBLIC_APP_URL') || 'https://el-molino-ops.vercel.app', 'X-Title': 'El Molino Ops' }) };
 }
 
-function geminiLanes(messages: AIMessage[]): Lane[] {
+function geminiLanes(messages: AIMessage[]): AILane[] {
   const key = env('GEMINI_API_KEY'); if (!key || !boolEnv('GEMINI_FREE_ONLY', true)) return [];
   const system = messages.find(m => m.role === 'system')?.content || '';
   const contents = messages.filter(m => m.role !== 'system').map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }));
@@ -63,19 +64,19 @@ function geminiLanes(messages: AIMessage[]): Lane[] {
   }}));
 }
 
-function groqLanes(messages: AIMessage[]): Lane[] {
+function groqLanes(messages: AIMessage[]): AILane[] {
   const key = env('GROQ_API_KEY'); if (!key || !boolEnv('GROQ_FREE_ONLY', true)) return [];
   const models = (env('GROQ_FREE_MODELS') || 'openai/gpt-oss-120b,openai/gpt-oss-20b,llama-3.3-70b-versatile').split(',').map(s=>s.trim()).filter(Boolean);
   return models.map(model => ({ id:`groq:${model}`, provider:'Groq Free Tier', model, run:()=>openAICompatible('https://api.groq.com/openai/v1/chat/completions',key,model,messages) }));
 }
 
-function githubLanes(messages: AIMessage[]): Lane[] {
+function githubLanes(messages: AIMessage[]): AILane[] {
   const key = env('GITHUB_MODELS_TOKEN'); if (!key || !boolEnv('GITHUB_MODELS_FREE_ONLY', true)) return [];
   const models = (env('GITHUB_FREE_MODELS') || 'openai/gpt-4.1-mini,openai/gpt-4o-mini,meta/Llama-3.3-70B-Instruct').split(',').map(s=>s.trim()).filter(Boolean);
   return models.map(model => ({ id:`github:${model}`, provider:'GitHub Models Free Quota', model, run:()=>openAICompatible('https://models.github.ai/inference/chat/completions',key,model,messages,{Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2026-03-10'}) }));
 }
 
-function cloudflareLanes(messages: AIMessage[]): Lane[] {
+function cloudflareLanes(messages: AIMessage[]): AILane[] {
   const account = env('CLOUDFLARE_ACCOUNT_ID'), token = env('CLOUDFLARE_API_TOKEN');
   if (!account || !token || !boolEnv('CLOUDFLARE_FREE_ONLY', true)) return [];
   const models = (env('CLOUDFLARE_FREE_MODELS') || '@cf/meta/llama-3.2-3b-instruct').split(',').map(s=>s.trim()).filter(Boolean);
@@ -98,11 +99,9 @@ export function configuredFreeProviders() {
   };
 }
 
-export async function runFreeAI(messages: AIMessage[]): Promise<AIRouterResult | null> {
-  const lanes = [openRouterLane(messages), ...geminiLanes(messages), ...groqLanes(messages), ...githubLanes(messages), ...cloudflareLanes(messages)].filter(Boolean) as Lane[];
+export async function runLanePlan(lanes: AILane[], start = 0): Promise<AIRouterResult | null> {
   if (!lanes.length) return null;
   const attempts: AIAttempt[] = [];
-  const start = state.cursor++ % lanes.length;
   for (let n=0;n<lanes.length;n++) {
     const lane = lanes[(start+n)%lanes.length];
     if (cooled(lane.id)) { attempts.push({provider:lane.provider,model:lane.model,ok:false,reason:'cooldown'}); continue; }
@@ -114,4 +113,11 @@ export async function runFreeAI(messages: AIMessage[]): Promise<AIRouterResult |
   }
   console.error('FREE_AI_ALL_LANES_FAILED', JSON.stringify(attempts));
   return null;
+}
+
+export async function runFreeAI(messages: AIMessage[]): Promise<AIRouterResult | null> {
+  const lanes = [openRouterLane(messages), ...geminiLanes(messages), ...groqLanes(messages), ...githubLanes(messages), ...cloudflareLanes(messages)].filter(Boolean) as AILane[];
+  if (!lanes.length) return null;
+  const start = state.cursor++ % lanes.length;
+  return runLanePlan(lanes,start);
 }
