@@ -5,6 +5,7 @@ import './command.css';
 import PWARegister from './pwa-register';
 import NetworkResilience from './network-resilience';
 import GlobalActions from './global-actions';
+import ErrorSanitizer from './error-sanitizer';
 
 export const metadata: Metadata = {
   title: { default: 'El Molino Ops', template: '%s · El Molino Ops' },
@@ -32,6 +33,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <body>
         <PWARegister />
         <NetworkResilience />
+        <ErrorSanitizer />
         <GlobalActions />
         {children}
       </body>
