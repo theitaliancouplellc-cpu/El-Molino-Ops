@@ -8,7 +8,12 @@ type Citation = { title?:string; url?:string; source?:string };
 function capabilityAnswer(){
   return `I can work as the El Molino Johns Island assistant, not just a database search box. I can explain what I can do, answer from internal restaurant knowledge, search the public web only for El Molino-related information, distinguish internal facts from public research, help draft opening/mid-shift/closing duties, training material, checklists, SOPs and manager notes, and help turn captured restaurant knowledge into structured work.\n\nInternal answers are labeled Internal El Molino. Public research is labeled El Molino Web. If I do not know an internal procedure, I should say that instead of inventing one.`;
 }
-function isCapability(q:string){const s=q.toLowerCase().trim();return /^(what can you do|what do you do|help|how can you help|who are you|what are you capable of)\??$/.test(s)}
+function isCapability(q:string){
+  const s=q.toLowerCase().trim().replace(/[?!.,]+$/g,'');
+  return /^(what( all)? can you do|what can you help( me)? with|what do you do|how can you help( me)?|how can you help|what are your capabilities|what are you capable of|tell me what you can do|show me what you can do|help me understand what you can do|who are you|help)$/.test(s)
+    || (/\bwhat\b/.test(s) && /\b(can|could)\b/.test(s) && /\byou\b/.test(s) && /\b(do|help)\b/.test(s) && s.length < 90)
+    || (/\b(capabilities|features|abilities)\b/.test(s) && /\b(your|you)\b/.test(s) && s.length < 90);
+}
 function wantsWeb(q:string){return /(web|online|internet|public|current|latest|hours|address|website|review|instagram|facebook|menu price|toast|doordash|uber|owner|ownership|owns|opened|location|phone number)/i.test(q)}
 function clearlyUnrelated(q:string){return /(weather|bitcoin|president|nba|nfl|movie|anime|stock market|celebrity|space|quantum|spaghetti|politics|election|crypto|football|basketball|baseball)/i.test(q)}
 function looksRestaurantScoped(q:string){return /(el molino|taqueria|johns island|restaurant|our |we |us |menu|hours|owner|owns|address|phone|review|taco|birria|burrito|toast|doordash|uber|location|store|kitchen|employee|shift|opening|closing|procedure|recipe|product)/i.test(q)}
