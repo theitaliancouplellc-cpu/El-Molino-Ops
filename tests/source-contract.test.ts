@@ -21,9 +21,10 @@ test('task filter remains visible while AI source routing remains hidden',()=>{
   assert.match(css,/\.task-toolbar \.source-switch\{display:grid!important/);
 });
 
-test('global command palette safe retry and error sanitizer are mounted',()=>{
-  const layout=read('app/layout.tsx');
-  assert.match(layout,/GlobalActions/);assert.match(layout,/NetworkResilience/);assert.match(layout,/ErrorSanitizer/);
+test('global command palette resilient transport and error sanitizer are mounted once',()=>{
+  const layout=read('app/layout.tsx'),pwa=read('app/pwa-register.tsx');
+  assert.match(layout,/GlobalActions/);assert.match(layout,/ErrorSanitizer/);assert.doesNotMatch(layout,/NetworkResilience/);
+  assert.match(pwa,/safeFetchWithRetry/);assert.match(pwa,/refreshSession/);assert.match(pwa,/response\.status===401/);
 });
 
 test('build script runs full tests before next build',()=>{
@@ -36,9 +37,9 @@ test('uploads enforce a finite size limit and rollback failed attachment links',
   assert.match(capture,/MAX_FILE_BYTES/);assert.match(capture,/50\*1024\*1024/);assert.match(capture,/remove\(\[path\]\)/);
 });
 
-test('AI actions remain confirmation-gated',()=>{
+test('AI actions remain confirmation-gated and stale proposals are cleared',()=>{
   const pwa=read('app/pwa-register.tsx');
-  assert.match(pwa,/Confirm AI action/);assert.match(pwa,/Manager access is required/);
+  assert.match(pwa,/Confirm AI action/);assert.match(pwa,/Manager access is required/);assert.match(pwa,/if\(isAsk\)setPendingAction\(null\)/);assert.match(pwa,/actionLock\.current/);
 });
 
 test('Ask AI always handles basic conversation before knowledge fallback',()=>{
@@ -51,27 +52,19 @@ test('Ask AI always handles basic conversation before knowledge fallback',()=>{
 });
 
 test('raw JWT and database internals are sanitized before reaching users',()=>{
-  const sanitizer=read('app/error-sanitizer.tsx'),layout=read('app/layout.tsx');
-  assert.match(sanitizer,/jwt issued at future/i);
-  assert.match(sanitizer,/friendlyErrorText/);
-  assert.match(sanitizer,/refreshSession/);
-  assert.match(layout,/ErrorSanitizer/);
+  const sanitizer=read('app/error-sanitizer.tsx'),layout=read('app/layout.tsx'),pwa=read('app/pwa-register.tsx');
+  assert.match(sanitizer,/jwt issued at future/i);assert.match(sanitizer,/friendlyErrorText/);assert.match(sanitizer,/refreshSession/);
+  assert.match(layout,/ErrorSanitizer/);assert.match(pwa,/friendlyErrorText/);
 });
 
 test('operational record detail preserves attachment favorite and recent workflows',()=>{
   const detail=read('app/ops-record/[id]/page.tsx');
-  assert.match(detail,/entity_file_links/);
-  assert.match(detail,/createSignedUrl/);
-  assert.match(detail,/favorites/);
-  assert.match(detail,/recent_views/);
-  assert.match(detail,/entityType=ops_record/);
+  assert.match(detail,/entity_file_links/);assert.match(detail,/createSignedUrl/);assert.match(detail,/favorites/);assert.match(detail,/recent_views/);assert.match(detail,/entityType=ops_record/);
 });
 
 test('saved workspace resolves operational records to stable detail routes',()=>{
   const saved=read('app/saved/page.tsx');
-  assert.match(saved,/\/ops-record\/\$\{id\}/);
-  assert.match(saved,/favorites/);
-  assert.match(saved,/recent_views/);
+  assert.match(saved,/\/ops-record\/\$\{id\}/);assert.match(saved,/favorites/);assert.match(saved,/recent_views/);
 });
 
 test('admin backup includes post-launch operational domains',()=>{
