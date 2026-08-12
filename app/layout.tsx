@@ -3,6 +3,7 @@ import './globals.css';
 import './extra.css';
 import './command.css';
 import PWARegister from './pwa-register';
+import NetworkResilience from './network-resilience';
 import GlobalActions from './global-actions';
 
 export const metadata: Metadata = {
@@ -30,6 +31,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="en">
       <body>
         <PWARegister />
+        <NetworkResilience />
         <GlobalActions />
         {children}
       </body>
