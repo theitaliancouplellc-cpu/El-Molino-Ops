@@ -5,17 +5,69 @@ import { supabase } from '@/lib/supabase';
 
 export default function PWARegister() {
   useEffect(() => {
+    let registration: ServiceWorkerRegistration | null = null;
+    let reloading = false;
+
+    const adoptUpdate = () => {
+      if (reloading) return;
+      reloading = true;
+      window.location.reload();
+    };
+
+    const checkForUpdate = async () => {
+      try {
+        if (!registration) return;
+        await registration.update();
+        if (registration.waiting) registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+      } catch {}
+    };
+
     if ('serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
-      navigator.serviceWorker.register('/sw.js').catch(() => undefined);
+      navigator.serviceWorker
+        .register('/sw.js', { updateViaCache: 'none' })
+        .then(async reg => {
+          registration = reg;
+          await checkForUpdate();
+
+          reg.addEventListener('updatefound', () => {
+            const worker = reg.installing;
+            if (!worker) return;
+            worker.addEventListener('statechange', () => {
+              if (worker.state === 'installed' && navigator.serviceWorker.controller) {
+                worker.postMessage({ type: 'SKIP_WAITING' });
+              }
+            });
+          });
+        })
+        .catch(() => undefined);
+
+      navigator.serviceWorker.addEventListener('controllerchange', adoptUpdate);
     }
-    const update = () => document.documentElement.dataset.network = navigator.onLine ? 'online' : 'offline';
-    update();
-    window.addEventListener('online', update);
-    window.addEventListener('offline', update);
+
+    const updateNetworkState = () => {
+      document.documentElement.dataset.network = navigator.onLine ? 'online' : 'offline';
+    };
+    const checkWhenVisible = () => {
+      if (document.visibilityState === 'visible') void checkForUpdate();
+    };
+    const checkOnPageShow = () => void checkForUpdate();
+    const checkOnFocus = () => void checkForUpdate();
+
+    updateNetworkState();
+    window.addEventListener('online', updateNetworkState);
+    window.addEventListener('offline', updateNetworkState);
+    document.addEventListener('visibilitychange', checkWhenVisible);
+    window.addEventListener('pageshow', checkOnPageShow);
+    window.addEventListener('focus', checkOnFocus);
     void recordPageView();
+
     return () => {
-      window.removeEventListener('online', update);
-      window.removeEventListener('offline', update);
+      window.removeEventListener('online', updateNetworkState);
+      window.removeEventListener('offline', updateNetworkState);
+      document.removeEventListener('visibilitychange', checkWhenVisible);
+      window.removeEventListener('pageshow', checkOnPageShow);
+      window.removeEventListener('focus', checkOnFocus);
+      if ('serviceWorker' in navigator) navigator.serviceWorker.removeEventListener('controllerchange', adoptUpdate);
     };
   }, []);
 
