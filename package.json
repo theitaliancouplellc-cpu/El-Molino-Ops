@@ -4,8 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "test": "tsx --test tests/*.test.ts",
     "test:ai": "tsx --test tests/free-ai-router.test.ts",
-    "build": "npm run test:ai && next build",
+    "build": "npm test && next build",
     "start": "next start",
     "lint": "next lint"
   },
