@@ -1,20 +1,34 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
+import PWARegister from './pwa-register';
 
 export const metadata: Metadata = {
-  title: 'El Molino Ops',
-  description: 'Johns Island restaurant operations workspace',
+  title: { default: 'El Molino Ops', template: '%s · El Molino Ops' },
+  description: 'Private Johns Island operations workspace',
+  applicationName: 'El Molino Ops',
+  manifest: '/manifest.webmanifest',
+  icons: { icon: '/icon.svg', apple: '/icon.svg' },
   appleWebApp: {
     capable: true,
     title: 'El Molino Ops',
-    statusBarStyle: 'black-translucent',
+    statusBarStyle: 'default',
   },
+  formatDetection: { telephone: true, email: true, address: true },
+};
+
+export const viewport: Viewport = {
+  themeColor: '#173d2a',
+  colorScheme: 'light dark',
+  viewportFit: 'cover',
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <PWARegister />
+        {children}
+      </body>
     </html>
   );
 }
