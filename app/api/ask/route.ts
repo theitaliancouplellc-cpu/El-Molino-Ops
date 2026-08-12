@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 type K = { title?:string; content?:string; status?:string; category?:string|null };
 type P = { title?:string; description?:string|null; status?:string };
 type Citation = { title?:string; url?:string; source?:string };
+type HistoryMessage = { role:'user'|'assistant'; content:string };
 
 const APP_KNOWLEDGE = `
 El Molino Ops is a private operations app for the Johns Island location.
@@ -78,20 +79,26 @@ export async function POST(req:Request){
     const question=clean(body.question,4000).trim();
     const knowledge=(Array.isArray(body.knowledge)?body.knowledge.slice(0,200):[]) as K[];
     const procedures=(Array.isArray(body.procedures)?body.procedures.slice(0,100):[]) as P[];
+    const history=(Array.isArray(body.history)?body.history:[])
+      .filter((m:any)=>m&&(m.role==='user'||m.role==='assistant')&&typeof m.content==='string')
+      .slice(-12)
+      .map((m:any)=>({role:m.role,content:clean(m.content,3000)})) as HistoryMessage[];
     if(!question)return NextResponse.json({answer:'Ask me anything about El Molino or this app.',source:'Assistant',citations:[]});
-    if(isCapability(question))return NextResponse.json({answer:capabilityAnswer(),source:'Assistant',citations:[]});
+    if(isCapability(question)&&history.length===0)return NextResponse.json({answer:capabilityAnswer(),source:'Assistant',citations:[]});
 
-    const appQuestion=isAppQuestion(question);
+    const previousUser=[...history].reverse().find(m=>m.role==='user')?.content||'';
+    const userContext=`${previousUser}\n${question}`;
+    const appQuestion=isAppQuestion(question)||isAppQuestion(previousUser)||isCapability(previousUser);
     const internal=knowledge.filter(k=>!String(k.category||'').includes('research'));
     const publicResearch=knowledge.filter(k=>String(k.category||'').includes('research'));
-    const useWeb=!appQuestion&&wantsWeb(question)&&looksRestaurantScoped(question)&&!clearlyUnrelated(question);
+    const useWeb=!appQuestion&&wantsWeb(userContext)&&looksRestaurantScoped(userContext)&&!clearlyUnrelated(question);
     const context=(useWeb?publicResearch:internal).slice(0,60).map(k=>`- ${clean(k.title,160)}: ${clean(k.content,2400)}`).join('\n');
     const proc=procedures.slice(0,40).map(p=>`- ${clean(p.title,160)}: ${clean(p.description,1800)} [${clean(p.status,40)}]`).join('\n');
 
     const token=process.env.AI_GATEWAY_API_KEY||process.env.VERCEL_OIDC_TOKEN;
     if(!token){
       if(appQuestion)return NextResponse.json({answer:`The app includes Today, Work, Team, Ask AI and More, plus Task Center, Calendar, Capture Studio, Discussions, Menu Catalog, Account & Security, Data Import and Admin Center. Ask me about any specific screen, feature, permission or workflow and I’ll explain it.`,source:'Assistant',citations:[]});
-      const pool=useWeb?publicResearch:internal;const words=question.toLowerCase().split(/\W+/).filter(w=>w.length>3);
+      const pool=useWeb?publicResearch:internal;const words=userContext.toLowerCase().split(/\W+/).filter(w=>w.length>3);
       const hay=pool.filter(k=>words.some(w=>`${k.title} ${k.content}`.toLowerCase().includes(w))).slice(0,5);
       if(hay.length)return NextResponse.json({answer:hay.map(k=>`${k.title}: ${k.content}`).join('\n\n'),source:'Assistant',citations:[]});
       return NextResponse.json({answer:'I don’t have enough reliable information to answer that yet. You can teach me more in Knowledge Studio, or ask me a current public question specifically about El Molino.',source:'Assistant',citations:[]});
@@ -100,7 +107,11 @@ export async function POST(req:Request){
     const routingInstruction=useWeb
       ?`Use web search only for this El Molino-related public question. Prefer official El Molino pages, Toast, maps/listings and credible local reporting. Do not browse unrelated topics. Never present public research as an approved internal SOP.`
       :`Do not use web search. Answer from the app knowledge and internal restaurant context supplied below. If the restaurant context does not support a restaurant-specific answer, say what is missing rather than guessing.`;
-    const payload:any={model:'anthropic/claude-sonnet-4-5',max_tokens:1200,system:`You are the private El Molino assistant for the Johns Island location and its operations app. ${routingInstruction} The user should experience one normal chatbot, so never expose internal routing categories or source-mode names. Be concise, practical and friendly. You can always explain your own capabilities and the app's functionality.`,messages:[{role:'user',content:`Question: ${question}\n\nApp Knowledge:\n${APP_KNOWLEDGE}\n\nRestaurant context records:\n${context||'(none)'}\n\nApproved/draft procedures:\n${proc||'(none)'}`}]} ;
+
+    const conversationMessages=history.map(m=>({role:m.role,content:m.content}));
+    conversationMessages.push({role:'user',content:`${question}\n\nUse the conversation above to resolve follow-ups and pronouns such as “that”, “it”, “those”, “the other one”, “why”, “go deeper”, or “more details”. Do not act like this is a new conversation.\n\nApp Knowledge:\n${APP_KNOWLEDGE}\n\nRestaurant context records:\n${context||'(none)'}\n\nApproved/draft procedures:\n${proc||'(none)'}`});
+
+    const payload:any={model:'anthropic/claude-sonnet-4-5',max_tokens:1400,system:`You are the private El Molino assistant for the Johns Island location and its operations app. ${routingInstruction} The user should experience one continuous, normal chatbot. Maintain conversational context across turns, answer follow-up questions in relation to prior messages, and never expose internal routing categories or source-mode names. Be concise, practical and friendly. You can always explain your own capabilities and the app's functionality.`,messages:conversationMessages};
     if(useWeb)payload.tools=[{type:'web_search_20250305',name:'web_search',max_uses:3}];
     const r=await fetch('https://ai-gateway.vercel.sh/v1/messages',{method:'POST',headers:{'content-type':'application/json','authorization':`Bearer ${token}`,'anthropic-version':'2023-06-01'},body:JSON.stringify(payload)});
     if(!r.ok){return NextResponse.json({answer:'The assistant service is temporarily unavailable. Please try again.',source:'Assistant',citations:[]},{status:200});}
