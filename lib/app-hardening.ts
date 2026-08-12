@@ -11,7 +11,7 @@ export function isValidEntityId(id:string){return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5
 export function validTarget(type:string|null,id:string|null){return Boolean(id&&isValidEntityId(id)&&['ops_record','task','procedure','knowledge'].includes(String(type||'')))}
 export function safePageLimit(n:number,max=1000){if(!Number.isFinite(n))return 50;return Math.max(1,Math.min(Math.trunc(n),max))}
 export function stableUnique<T>(items:T[],key:(x:T)=>string){const seen=new Set<string>();return items.filter(x=>{const k=key(x);if(seen.has(k))return false;seen.add(k);return true})}
-export function isTaskTerminal(status:string){return ['done','cancelled'].includes(String(status||'').toLowerCase())}
+export function isTaskTerminal(status:string){return ['done','cancelled'].includes(String(status||'').trim().toLowerCase())}
 export function dependencyCreatesCycle(taskId:string,dependsOnId:string,deps:{task_id:string;depends_on_task_id:string}[]){if(!taskId||!dependsOnId)return false;if(taskId===dependsOnId)return true;const graph=new Map<string,string[]>();for(const d of deps){const x=graph.get(d.task_id)||[];x.push(d.depends_on_task_id);graph.set(d.task_id,x)}const stack=[dependsOnId],seen=new Set<string>();while(stack.length){const x=stack.pop()!;if(x===taskId)return true;if(seen.has(x))continue;seen.add(x);stack.push(...(graph.get(x)||[]))}return false}
 export function normalizedText(v:unknown,max:number){return String(v??'').replace(/\u0000/g,'').trim().slice(0,max)}
 export function validEmail(v:string){return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v||'').trim())}
