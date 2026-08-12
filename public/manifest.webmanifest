@@ -1,0 +1,19 @@
+{
+  "name": "El Molino Ops",
+  "short_name": "El Molino",
+  "description": "Private operations workspace for El Molino Taqueria — Johns Island",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f5f2ea",
+  "theme_color": "#173d2a",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Ask El Molino", "short_name": "Ask AI", "url": "/?tab=ai" },
+    { "name": "Operations", "short_name": "Operations", "url": "/?tab=operations" },
+    { "name": "Menu Catalog", "short_name": "Menu", "url": "/menu" }
+  ]
+}
