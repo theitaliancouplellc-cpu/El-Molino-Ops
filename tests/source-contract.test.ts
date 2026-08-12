@@ -41,6 +41,15 @@ test('AI actions remain confirmation-gated',()=>{
   assert.match(pwa,/Confirm AI action/);assert.match(pwa,/Manager access is required/);
 });
 
+test('Ask AI always handles basic conversation before knowledge fallback',()=>{
+  const ask=read('app/api/ask/route.ts');
+  assert.match(ask,/function basicConversationAnswer/);
+  assert.match(ask,/Hey\. I’m here\. What do you want to work on for El Molino today\?/);
+  assert.match(ask,/I’m good and ready to help\. What are we working on at El Molino\?/);
+  assert.match(ask,/const basic=basicConversationAnswer\(question,history\);if\(basic\)return NextResponse\.json/);
+  assert.match(ask,/do not treat ordinary small talk as a request for restaurant facts/);
+});
+
 test('operational record detail preserves attachment favorite and recent workflows',()=>{
   const detail=read('app/ops-record/[id]/page.tsx');
   assert.match(detail,/entity_file_links/);
