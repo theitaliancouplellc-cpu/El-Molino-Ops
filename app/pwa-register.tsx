@@ -19,7 +19,6 @@ function visibleConversation(question:string): ChatTurn[] {
       return { role, content };
     }).filter(Boolean) as ChatTurn[];
 
-    // The optimistic current user message may already be visible. The API receives it separately.
     if (history.length && history[history.length-1].role === 'user' && history[history.length-1].content.trim() === question.trim()) history.pop();
     return history.slice(-20);
   } catch { return []; }
@@ -31,7 +30,6 @@ export default function PWARegister() {
     let reloading = false;
     const nativeFetch = window.fetch.bind(window);
 
-    // Keep Ask AI conversational without exposing routing or memory controls in the UI.
     window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       try {
         const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
@@ -40,7 +38,13 @@ export default function PWARegister() {
           const question = String(body.question || '').trim();
           const history = visibleConversation(question);
           if (history.length) body.history = history;
-          init = { ...init, body: JSON.stringify(body) };
+
+          const { data: sessionData } = await supabase.auth.getSession();
+          const accessToken = sessionData.session?.access_token;
+          const headers = new Headers(init.headers || {});
+          headers.set('content-type','application/json');
+          if (accessToken) headers.set('authorization', `Bearer ${accessToken}`);
+          init = { ...init, headers, body: JSON.stringify(body) };
         }
       } catch {}
       return nativeFetch(input, init);
