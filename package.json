@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "test:ai": "tsx --test tests/free-ai-router.test.ts",
+    "build": "npm run test:ai && next build",
     "start": "next start",
     "lint": "next lint"
   },
@@ -19,6 +20,7 @@
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "tsx": "^4.20.3",
     "typescript": "^5.8.0"
   }
 }
