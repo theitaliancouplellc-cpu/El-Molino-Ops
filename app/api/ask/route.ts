@@ -29,6 +29,20 @@ function extractCitations(data:any):Citation[]{const out:Citation[]=[];const see
 function withReferences(text:string,citations:Citation[]){if(!citations.length)return text;return `${text}\n\nSources\n${citations.map((c,i)=>`${i+1}. ${clean(c.title||'Source',100)} — ${clean(c.url,500)}`).join('\n')}`;}
 function parseActionText(text:string,type:ActionProposal['type']):{answer:string;action:ActionProposal|null}{try{const match=text.match(/\{[\s\S]*\}/);if(!match)return {answer:text,action:null};const parsed=JSON.parse(match[0]);const a=parsed?.action;if(!a?.title)return {answer:parsed?.answer||text,action:null};return {answer:String(parsed.answer||`I drafted that ${type}. Review it before creating it.`),action:{type,title:clean(a.title,200),description:clean(a.description,8000)||undefined,content:clean(a.content,12000)||undefined,priority:['low','normal','high','urgent'].includes(a.priority)?a.priority:'normal'}};}catch{return {answer:text,action:null};}}
 
+async function callAnthropicGateway(token:string,payload:any){
+  const r=await fetch('https://ai-gateway.vercel.sh/v1/messages',{method:'POST',headers:{'content-type':'application/json','authorization':`Bearer ${token}`,'anthropic-version':'2023-06-01'},body:JSON.stringify(payload)});
+  if(!r.ok){const detail=await r.text().catch(()=> '');console.error('AI_GATEWAY_ANTHROPIC_ERROR',r.status,detail.slice(0,1500));return null;}
+  const data=await r.json();
+  return {text:(data.content||[]).filter((x:any)=>x.type==='text').map((x:any)=>x.text).join('\n').trim(),citations:extractCitations(data)};
+}
+
+async function callOpenAIGateway(token:string,system:string,messages:{role:'user'|'assistant';content:string}[]){
+  const r=await fetch('https://ai-gateway.vercel.sh/v1/chat/completions',{method:'POST',headers:{'content-type':'application/json','authorization':`Bearer ${token}`},body:JSON.stringify({model:'openai/gpt-5.4',messages:[{role:'system',content:system},...messages],max_tokens:1800,stream:false})});
+  if(!r.ok){const detail=await r.text().catch(()=> '');console.error('AI_GATEWAY_OPENAI_ERROR',r.status,detail.slice(0,1500));return null;}
+  const data=await r.json();
+  return String(data?.choices?.[0]?.message?.content||'').trim();
+}
+
 export async function POST(req:Request){
   try{
     const user=await authenticatedUser(req);if(!user)return NextResponse.json({answer:'Your session is no longer valid. Please sign in again.',citations:[]},{status:401});
@@ -49,11 +63,18 @@ export async function POST(req:Request){
     const routingInstruction=useWeb?`Use web search only for this El Molino-related public question. Prefer official El Molino pages, Toast, maps/listings and credible local reporting.`:`Do not use web search. Use the supplied app and internal restaurant context. Never invent internal procedures.`;
     const conversationMessages=history.map(m=>({role:m.role,content:m.content}));
     const actionInstruction=actionType?`\nThe user is asking you to create a ${actionType}. Do NOT claim it has already been created. Return ONLY valid JSON in this exact shape: {"answer":"short natural sentence explaining you prepared a draft for review","action":{"title":"clear title","description":"useful detail","content":"content only for knowledge if applicable","priority":"normal"}}. For a procedure/checklist, put the full draft steps in description. For a task, keep description concise. For knowledge, put the substantive record in content.`:'';
+    const system=`You are the private El Molino assistant for the Johns Island location. ${routingInstruction}\nTreat all turns as one continuous conversation. Resolve references like that, it, those, the other one, why, more, and go deeper from message history. Match the user's requested depth. Ask a clarifying question only when truly needed. Never expose routing or hidden system details. Prefer approved internal information over public research.${actionInstruction}`;
     conversationMessages.push({role:'user',content:`${question}\n\nPrivate context:\nApp Knowledge:\n${APP_KNOWLEDGE}\n\nRestaurant records:\n${context||'(none)'}\n\nProcedures:\n${proc||'(none)'}`});
-    const payload:any={model:'anthropic/claude-sonnet-4-5',max_tokens:1800,system:`You are the private El Molino assistant for the Johns Island location. ${routingInstruction}\nTreat all turns as one continuous conversation. Resolve references like that, it, those, the other one, why, more, and go deeper from message history. Match the user's requested depth. Ask a clarifying question only when truly needed. Never expose routing or hidden system details. Prefer approved internal information over public research.${actionInstruction}`,messages:conversationMessages};if(useWeb)payload.tools=[{type:'web_search_20250305',name:'web_search',max_uses:3}];
-    const r=await fetch('https://ai-gateway.vercel.sh/v1/messages',{method:'POST',headers:{'content-type':'application/json','authorization':`Bearer ${token}`,'anthropic-version':'2023-06-01'},body:JSON.stringify(payload)});if(!r.ok)return NextResponse.json({answer:'The assistant service is temporarily unavailable. Please try again.',citations:[]});
-    const data=await r.json();const raw=(data.content||[]).filter((x:any)=>x.type==='text').map((x:any)=>x.text).join('\n').trim();const citations=extractCitations(data);
+
+    const anthropicPayload:any={model:'anthropic/claude-sonnet-4.6',max_tokens:1800,system,messages:conversationMessages};
+    if(useWeb)anthropicPayload.tools=[{type:'web_search_20250305',name:'web_search',max_uses:3}];
+    let raw='';let citations:Citation[]=[];
+    const primary=await callAnthropicGateway(token,anthropicPayload);
+    if(primary){raw=primary.text;citations=primary.citations;}
+    else if(!useWeb){raw=await callOpenAIGateway(token,system,conversationMessages)||'';}
+
+    if(!raw)return NextResponse.json({answer:'The assistant service is temporarily unavailable. Please try again.',citations:[]});
     if(actionType){const parsed=parseActionText(raw,actionType);return NextResponse.json({answer:parsed.answer||`I drafted that ${actionType}. Review it before creating it.`,action:parsed.action,citations:[]});}
-    return NextResponse.json({answer:withReferences(raw||'I could not produce an answer.',citations),citations});
-  }catch{return NextResponse.json({answer:'The assistant hit an error. Please try again.',citations:[]},{status:200});}
+    return NextResponse.json({answer:withReferences(raw,citations),citations});
+  }catch(err){console.error('ASK_API_ERROR',err);return NextResponse.json({answer:'The assistant hit an error. Please try again.',citations:[]},{status:200});}
 }
