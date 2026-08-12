@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { configuredFreeProviders, runFreeAI, type AIMessage } from '../../../lib/free-ai-router';
+import { basicConversationAnswer, clearlyUnrelated, contextualSearchQuestion, isCapability, isCapabilityFollowup, type ConversationHistoryMessage } from '../../../lib/ask-conversation';
 
 type K = { title?:string; content?:string; status?:string; category?:string|null };
 type P = { title?:string; description?:string|null; status?:string };
-type HistoryMessage = { role:'user'|'assistant'; content:string };
+type HistoryMessage = ConversationHistoryMessage;
 type ActionProposal = { type:'task'|'procedure'|'knowledge'; title:string; description?:string; content?:string; priority?:'low'|'normal'|'high'|'urgent' };
 
 const APP_KNOWLEDGE = `El Molino Ops is a private operations app for the Johns Island location.
@@ -32,29 +33,16 @@ async function authenticatedUser(req:Request){
 
 function capabilityAnswer(){return `I can answer questions about this app and El Molino, carry conversations across follow-ups, use the restaurant knowledge and procedures stored here, help with operational planning, and prepare tasks, procedures/checklists and knowledge records for review. Behind the scenes I can rotate among configured free AI providers when one hits a limit or goes down.`;}
 function capabilityDetails(){return `In practical terms, I can help with app navigation and features, restaurant knowledge, procedures and training, opening/mid-shift/closing work, manager planning, task and checklist drafts, and knowledge capture. You can keep a normal conversation going with follow-ups like “go deeper,” “what about managers?” or “turn that into a checklist.” If an external free model is unavailable or out of quota, the router automatically tries another configured free model before falling back to the app's own knowledge.`}
-function isCapability(q:string){const s=q.toLowerCase().trim().replace(/[?!.,]+$/g,'');return /^(hi\s+)?(what( all)? can you do|what can you help( me)? with|what do you do|help|how can you help( me)?|who are you|what are you capable of|what are your capabilities|what can i ask you|how do you work)$/.test(s)}
-function isCapabilityFollowup(q:string,history:HistoryMessage[]){const s=q.toLowerCase();const recent=history.slice(-4).map(m=>m.content.toLowerCase()).join(' ');return /(more detail|more details|go deeper|explain more|what does that mean|tell me more|break that down)/.test(s)&&/(what.*can you do|capabilit|answer questions|rotate among|tasks|procedures)/.test(recent)}
 function isAppQuestion(q:string){return /(this app|the app|el molino ops|feature|functionality|screen|tab|button|setting|notification|task center|calendar|capture studio|knowledge studio|admin center|discussion|account|security|login|password|profile|permission|role|upload|file|camera|voice|search|offline|pwa|home screen|import|export|backup|history|audit|where (do|can|is)|how do i|how can i|can the app|does the app|what does .* do)/i.test(q)}
-function clearlyUnrelated(q:string){return /(weather|bitcoin|president|nba|nfl|movie|anime|stock market|celebrity|space|quantum|politics|election|crypto|football|basketball|baseball)/i.test(q)}
-function basicConversationAnswer(q:string,history:HistoryMessage[]){
-  const s=q.toLowerCase().trim().replace(/[!?.,]+$/g,'');
-  if(/^(hi|hello|hey|hiya|yo|good morning|good afternoon|good evening)$/.test(s))return `Hey. I’m here. What do you want to work on for El Molino today?`;
-  if(/^(how are you|how's it going|hows it going|how are things|what's up|whats up|sup)$/.test(s))return `I’m good and ready to help. What are we working on at El Molino?`;
-  if(/^(thanks|thank you|thx|appreciate it|perfect|awesome|great|nice|cool)$/.test(s))return `Of course. What do you want to tackle next for El Molino?`;
-  if(/^(ok|okay|got it|sounds good|alright|all right|bet|sure)$/.test(s))return `Got it. What do you want to do next?`;
-  if(/^(what now|what next|what should we do next|now what)$/.test(s))return `We can keep building the app, work through restaurant operations, create tasks or procedures, or organize El Molino information. Tell me what you want to tackle next.`;
-  if(/^(bye|goodbye|see you|later|talk later)$/.test(s))return `Got it. I’ll be here when you’re ready to get back to El Molino.`;
-  if(/^(yes|yeah|yep|yup|no|nope|maybe)$/.test(s)&&history.length)return `Got it. Keep going — I’m following the conversation.`;
-  return null;
-}
 function detectAction(q:string):ActionProposal['type']|null{const s=q.toLowerCase();if(/\b(create|make|add|set up|draft)\b.*\b(task|to-do|todo)\b|\bremind (me|us) to\b/.test(s))return 'task';if(/\b(create|make|draft|write|build|turn .* into)\b.*\b(procedure|sop|checklist|opening checklist|closing checklist|side work)\b/.test(s))return 'procedure';if(/\b(save|add|remember|record|store)\b.*\b(knowledge|knowledge base|as knowledge|restaurant knowledge|note)\b/.test(s))return 'knowledge';return null;}
 function parseActionText(text:string,type:ActionProposal['type']){try{const match=text.match(/\{[\s\S]*\}/);if(!match)return {answer:text,action:null};const parsed=JSON.parse(match[0]);const a=parsed?.action;if(!a?.title)return {answer:parsed?.answer||text,action:null};return {answer:String(parsed.answer||`I drafted that ${type}. Review it before creating it.`),action:{type,title:clean(a.title,200),description:clean(a.description,8000)||undefined,content:clean(a.content,12000)||undefined,priority:['low','normal','high','urgent'].includes(a.priority)?a.priority:'normal'} as ActionProposal};}catch{return {answer:text,action:null};}}
 
 function localFallback(question:string,history:HistoryMessage[],knowledge:K[],procedures:P[]){
   const basic=basicConversationAnswer(question,history);if(basic)return basic;
   if(isCapability(question)||isCapabilityFollowup(question,history))return capabilityDetails();
-  const q=question.toLowerCase();
-  if(isAppQuestion(`${history.slice(-2).map(m=>m.content).join(' ')} ${question}`)){
+  const contextual=contextualSearchQuestion(question,history);
+  const q=contextual.toLowerCase();
+  if(isAppQuestion(`${history.slice(-2).map(m=>m.content).join(' ')} ${contextual}`)){
     if(/task center|task|assigned|work/.test(q))return `Task Center is where operational work is created, assigned, prioritized, tracked and completed. Today surfaces current work; Work is the deeper operational view.`;
     if(/knowledge studio|knowledge/.test(q))return `Knowledge Studio is the restaurant's internal source of truth. It stores approved operational knowledge, recipes, product information, notes and references so the assistant can answer from El Molino-specific information instead of guessing.`;
     if(/team|employee|training/.test(q))return `Team is for people and training: employee records, roles, onboarding/training information and permissions that determine what each person can see or manage.`;
@@ -76,11 +64,12 @@ export async function POST(req:Request){
   try{
     const user=await authenticatedUser(req);if(!user)return NextResponse.json({answer:'Your session is no longer valid. Please sign in again.',citations:[]},{status:401});
     if(!allowed(user.id))return NextResponse.json({answer:'Too many requests at once. Wait a moment and try again.',citations:[]},{status:429});
-    const length=Number(req.headers.get('content-length')||0);if(length>1_000_000)return NextResponse.json({answer:'That request is too large. Ask a shorter question or process files separately.',citations:[]},{status:413});
-    const body=await req.json();const question=clean(body.question,4000).trim();
-    const knowledge=(Array.isArray(body.knowledge)?body.knowledge.slice(0,200):[]) as K[];
-    const procedures=(Array.isArray(body.procedures)?body.procedures.slice(0,100):[]) as P[];
-    const history=(Array.isArray(body.history)?body.history:[]).filter((m:any)=>m&&(m.role==='user'||m.role==='assistant')&&typeof m.content==='string').slice(-20).map((m:any)=>({role:m.role,content:clean(m.content,3500)})) as HistoryMessage[];
+    const length=Number(req.headers.get('content-length')||0);if(Number.isFinite(length)&&length>1_000_000)return NextResponse.json({answer:'That request is too large. Ask a shorter question or process files separately.',citations:[]},{status:413});
+    let body:any;try{body=await req.json();}catch{return NextResponse.json({answer:'I could not read that request. Please send the message again.',citations:[],degraded:true},{status:200});}
+    const question=clean(body?.question,4000).trim();
+    const knowledge=(Array.isArray(body?.knowledge)?body.knowledge.slice(0,200):[]) as K[];
+    const procedures=(Array.isArray(body?.procedures)?body.procedures.slice(0,100):[]) as P[];
+    const history=(Array.isArray(body?.history)?body.history:[]).filter((m:any)=>m&&(m.role==='user'||m.role==='assistant')&&typeof m.content==='string').slice(-20).map((m:any)=>({role:m.role,content:clean(m.content,3500)})) as HistoryMessage[];
     if(!question)return NextResponse.json({answer:'Ask me anything about El Molino or this app.',citations:[]});
     const basic=basicConversationAnswer(question,history);if(basic)return NextResponse.json({answer:basic,citations:[],local:true});
     if(isCapability(question)&&history.length===0)return NextResponse.json({answer:capabilityAnswer(),citations:[]});
