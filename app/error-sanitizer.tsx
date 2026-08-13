@@ -41,9 +41,24 @@ export default function ErrorSanitizer(){
         }
       });
     };
+    const markDirty=(event:Event)=>{
+      const target=event.target;
+      if(!(target instanceof HTMLElement))return;
+      if(!target.matches('input:not([type="hidden"]):not([type="button"]):not([type="submit"]):not([type="reset"]),textarea,select,[contenteditable="true"]'))return;
+      const form=target.closest('form');
+      if(form)form.dataset.dirty='true';
+      if(target instanceof HTMLTextAreaElement)target.dataset.dirty='true';
+      if(!form&&!(target instanceof HTMLTextAreaElement)){
+        let sentinel=document.querySelector<HTMLTextAreaElement>('textarea[data-pwa-dirty-sentinel="true"]');
+        if(!sentinel){sentinel=document.createElement('textarea');sentinel.hidden=true;sentinel.dataset.pwaDirtySentinel='true';document.body.appendChild(sentinel)}
+        sentinel.dataset.dirty='true';
+      }
+    };
+    const clearReset=(event:Event)=>{if(event.target instanceof HTMLFormElement)delete event.target.dataset.dirty};
     sanitize();
     const observer=new MutationObserver(sanitize);observer.observe(document.body,{subtree:true,childList:true,characterData:true});
-    return()=>observer.disconnect();
+    document.addEventListener('input',markDirty,true);document.addEventListener('change',markDirty,true);document.addEventListener('reset',clearReset,true);
+    return()=>{observer.disconnect();document.removeEventListener('input',markDirty,true);document.removeEventListener('change',markDirty,true);document.removeEventListener('reset',clearReset,true);document.querySelector('textarea[data-pwa-dirty-sentinel="true"]')?.remove()};
   },[]);
   return null;
 }
