@@ -36,7 +36,7 @@ function capabilityContinuationAnswer(s:string,history:ConversationHistoryMessag
 export function basicConversationAnswer(q:string,history:ConversationHistoryMessage[]=[]){
   const s=norm(q);if(!s)return null;
   if(any(s,greetingPatterns))return `Hey. I’m here. What do you want to work on for El Molino today?`;
-  if(any(s,wellbeingPatterns))return `I’m doing well and ready to help. What do you want to work on?`;
+  if(any(s,wellbeingPatterns))return `I’m good and ready to help. What are we working on at El Molino?`;
   if(any(s,thanksPatterns))return `Of course. What else can I help with?`;
   if(any(s,acknowledgePatterns))return `Got it. What do you want to do next?`;
   if(any(s,shortAnswerPatterns)&&history.length)return `Got it. I’m following you.`;
