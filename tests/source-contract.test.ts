@@ -42,13 +42,24 @@ test('AI actions remain confirmation-gated and stale proposals are cleared',()=>
   assert.match(pwa,/Confirm AI action/);assert.match(pwa,/Manager access is required/);assert.match(pwa,/if\(isAsk\)setPendingAction\(null\)/);assert.match(pwa,/actionLock\.current/);
 });
 
-test('Ask AI always handles basic conversation before knowledge fallback',()=>{
-  const ask=read('app/api/ask/route.ts'),conversation=read('lib/ask-conversation.ts');
-  assert.match(ask,/basicConversationAnswer/);
-  assert.match(conversation,/Hey\. I’m here\. What do you want to work on for El Molino today\?/);
-  assert.match(conversation,/I’m good and ready to help\. What are we working on at El Molino\?/);
-  assert.match(ask,/const basic=basicConversationAnswer\(question,history\);if\(basic\)return NextResponse\.json/);
-  assert.match(ask,/do not treat ordinary small talk as a request for restaurant facts/);
+test('Ask AI is model-first and keeps retrieval private',()=>{
+  const ask=read('app/api/ask/route.ts');
+  assert.match(ask,/full conversational AI assistant/);
+  assert.match(ask,/rather than phrase matching/);
+  assert.match(ask,/Do not expose raw retrieval blocks/);
+  assert.match(ask,/const result=await runFreeAI\(messages\)/);
+  assert.doesNotMatch(ask,/basicConversationAnswer/);
+  assert.doesNotMatch(ask,/clearlyUnrelated/);
+  assert.doesNotMatch(ask,/From approved internal El Molino knowledge I found/);
+});
+
+test('Ask AI is pinned to zero-cost gateway models',()=>{
+  const ask=read('app/api/ask/route.ts');
+  assert.match(ask,/zai\/glm-4\.6v-flash/);
+  assert.match(ask,/poolside\/laguna-s-2\.1-free/);
+  assert.match(ask,/inclusionai\/ling-3\.0-tiny-free/);
+  assert.match(ask,/EL_MOLINO_AGENT_MODEL=FREE_MODELS\[0\]/);
+  assert.match(ask,/EL_MOLINO_AGENT_FALLBACK_MODELS=FREE_MODELS\.slice\(1\)\.join/);
 });
 
 test('raw JWT and database internals are sanitized before reaching users',()=>{
