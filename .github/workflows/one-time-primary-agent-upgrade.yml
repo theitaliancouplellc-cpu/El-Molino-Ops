@@ -1,0 +1,53 @@
+name: One-time primary AI agent upgrade
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  upgrade:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Make model-driven agent primary
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('app/api/ask/route.ts')
+          s=p.read_text()
+          s=s.replace("import { configuredFreeProviders, runFreeAI, type AIMessage } from '../../../lib/free-ai-router';", "import { configuredFreeProviders, runFreeAI, type AIMessage } from '../../../lib/free-ai-router';\nimport { primaryAgentConfigured, runPrimaryAgent } from '../../../lib/primary-ai-agent';")
+          s=s.replace("import { basicConversationAnswer, clearlyUnrelated, contextualSearchQuestion, isCapability, isCapabilityFollowup, type ConversationHistoryMessage } from '../../../lib/ask-conversation';", "import { basicConversationAnswer, contextualSearchQuestion, isCapability, isCapabilityFollowup, type ConversationHistoryMessage } from '../../../lib/ask-conversation';")
+          s=s.replace("export async function GET(){return NextResponse.json({ok:true,mode:'free-only-rotation',providers:configuredFreeProviders()});}", "export async function GET(){return NextResponse.json({ok:true,mode:primaryAgentConfigured()?'model-driven-agent':'fallback-only',primaryAgent:primaryAgentConfigured(),fallbackProviders:configuredFreeProviders()});}")
+          s=s.replace("    const basic=basicConversationAnswer(question,history);if(basic)return NextResponse.json({answer:basic,citations:[],local:true});\n    if(isCapability(question)&&history.length===0)return NextResponse.json({answer:capabilityAnswer(),citations:[]});if(isCapabilityFollowup(question,history))return NextResponse.json({answer:capabilityDetails(),citations:[]});\n    const actionType=detectAction(question);\n    if(clearlyUnrelated(question)&&!actionType)return NextResponse.json({answer:'I’m focused on El Molino and this operations app. Ask me anything related to the restaurant, its operations, people, procedures, menu, data or the app itself.',citations:[]});", "    const actionType=detectAction(question);")
+          old="const system=`You are Ask El Molino, the private assistant for El Molino Taqueria's Johns Island operations app. Be conversational and natural. Always handle greetings, acknowledgments, thanks, casual follow-ups and normal conversational transitions like a regular assistant. Keep the broader conversation centered on El Molino, its app, operations, employees, procedures, menu, training, vendors, maintenance and restaurant-related work, but do not treat ordinary small talk as a request for restaurant facts. Treat the conversation as continuous and resolve references like that, it, those, the other one, why, more and go deeper from history. Only treat supplied approved knowledge/procedures as verified restaurant facts. Never invent a restaurant fact or completed action. ${actionInstruction}`;"
+          new="const system=`You are Ask El Molino, the model-driven operations agent for El Molino Taqueria's Johns Island app. Understand meaning semantically; do not depend on trigger phrases or keyword matching. Read the full conversation history and infer references, intent, corrections, follow-ups, pronouns and implied context naturally. Communicate like a capable human assistant: answer the actual question, explain reasoning clearly when useful, ask a concise clarifying question only when information is genuinely missing, and do not repeat yourself unless asked. Keep restaurant and app work as your professional focus while allowing normal conversational small talk. Use supplied approved knowledge and approved procedures as verified El Molino facts. Distinguish verified facts from general restaurant-management advice. Never invent private restaurant facts. Never claim an action was completed unless the app explicitly confirms it. When the user asks for analysis, planning, math, comparisons, troubleshooting, drafting or explanation, reason through the request instead of matching it to canned text. ${actionInstruction}`;"
+          if old not in s: raise SystemExit('system prompt marker not found')
+          s=s.replace(old,new)
+          s=s.replace("    const result=await runFreeAI(messages);", "    let result=await runPrimaryAgent(messages);\n    if(!result)result=await runFreeAI(messages);")
+          p.write_text(s)
+
+          t=Path('tests/primary-agent-contract.test.ts')
+          t.write_text("""import test from 'node:test';\nimport assert from 'node:assert/strict';\nimport fs from 'node:fs';\n\ntest('Ask AI uses model-driven agent before fallback engines',()=>{\n  const src=fs.readFileSync('app/api/ask/route.ts','utf8');\n  const primary=src.indexOf('runPrimaryAgent(messages)');\n  const secondary=src.indexOf('runFreeAI(messages)');\n  const local=src.indexOf('localFallback(question,history,knowledge,procedures)');\n  assert.ok(primary>=0&&secondary>primary&&local>secondary);\n  assert.doesNotMatch(src,/const basic=basicConversationAnswer\\(question,history\\);if\\(basic\\)return NextResponse/);\n  assert.doesNotMatch(src,/if\\(clearlyUnrelated\\(question\\)/);\n});\n\ntest('primary agent is a real remote model runtime with bounded failure behavior',()=>{\n  const src=fs.readFileSync('lib/primary-ai-agent.ts','utf8');\n  assert.match(src,/ai-gateway\\.vercel\\.sh\\/v1\\/chat\\/completions/);\n  assert.match(src,/max_tokens:1800/);\n  assert.match(src,/fetchWithTimeout/);\n});\n""")
+          PY
+      - name: Run full test suite
+        run: npm test
+      - name: Type check
+        run: npx tsc --noEmit
+      - name: Production build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: test-public-key
+        run: npm run build
+      - name: Commit verified agent upgrade
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/api/ask/route.ts tests/primary-agent-contract.test.ts
+          git commit -m "Make model-driven AI agent primary"
+          git push
