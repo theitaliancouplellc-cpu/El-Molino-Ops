@@ -1,86 +1,13 @@
-name: One-time AI follow-up repair
+name: Obsolete Ask AI repair workflow
 
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  repair:
-    if: github.actor != 'github-actions[bot]'
+  retired:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Patch conversational follow-up handling
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-
-          p = Path('lib/ask-conversation.ts')
-          s = p.read_text()
-          old = "const continuationPatterns=[/^(go for it|do it|go ahead|continue|keep going|carry on|proceed|move on)$/, /^(next|next step|what'?s next|whats next|then what|and then|so now what|what now|what next)$/, /^(more|say more|tell me more( about that)?|go deeper|explain more|break that down|elaborate)$/, /^(can you expand on that|expand on that|can you explain that|what do you mean|what does that mean|how so|why is that|why|how)$/, /^(what about|how about) .+$/];"
-          new = "const continuationPatterns=[/^(go for it|do it|go ahead|continue|keep going|carry on|proceed|move on)$/, /^(next|next step|what'?s next|whats next|then what|and then|so now what|what now|what next)$/, /^(more|say more|tell me more( about that)?|go deeper|explain more|break that down|elaborate)$/, /^(can you expand on that|expand on that|can you explain that|can you go into (more )?details?( about that)?|what do you mean|what( all)? does that mean|how so|why is that|why|how)$/, /^(what about|how about) .+$/];"
-          if old not in s:
-              raise SystemExit('continuationPatterns source did not match expected text')
-          s = s.replace(old, new)
-          marker = "export function isCapabilityFollowup(q:string,history:ConversationHistoryMessage[]){if(!isContinuation(q))return false;const recent=history.slice(-8).map(m=>norm(m.content)).join(' ');return /(what.*can you do|capabilit|answer questions|tasks|procedures|what can this bot do|what can ask ai do)/.test(recent);}\n"
-          addition = marker + "export function capabilityFollowupDepth(history:ConversationHistoryMessage[]){const prev=lastAssistant(history);return /in practical terms|el molino ops is organized around|deeper systems include/i.test(prev)?'breakdown':'details';}\n"
-          if marker not in s:
-              raise SystemExit('capability follow-up marker not found')
-          s = s.replace(marker, addition)
-          p.write_text(s)
-
-          p = Path('app/api/ask/route.ts')
-          s = p.read_text()
-          old_import = "import { basicConversationAnswer, clearlyUnrelated, contextualSearchQuestion, isCapability, isCapabilityFollowup, type ConversationHistoryMessage } from '../../../lib/ask-conversation';"
-          new_import = "import { basicConversationAnswer, capabilityFollowupDepth, clearlyUnrelated, contextualSearchQuestion, isCapability, isCapabilityFollowup, type ConversationHistoryMessage } from '../../../lib/ask-conversation';"
-          if old_import not in s:
-              raise SystemExit('route import did not match expected text')
-          s = s.replace(old_import, new_import)
-          details = "function capabilityDetails(){return `In practical terms, I can help with app navigation and features, approved restaurant knowledge, procedures and training, opening/mid-shift/closing work, manager planning, task and checklist drafts, and knowledge capture. You can keep a normal conversation going with follow-ups like “go deeper,” “what about managers?” or “turn that into a checklist.” If every external free model is unavailable, I keep basic conversation, app help, approved knowledge retrieval and safe action drafts working locally.`}\n"
-          breakdown = details + "function capabilityBreakdown(){return `Here’s what those systems mean in plain English:\n\n• Today — the quick operational dashboard for what matters right now.\n• Work / Task Center — create, assign, prioritize and complete restaurant work.\n• Team — employee records, roles, training and access permissions.\n• Ask AI — ask questions, continue a conversation, retrieve approved restaurant knowledge and prepare drafts for review.\n• Knowledge Studio — the approved internal source of truth for restaurant facts and procedures.\n• Menu Catalog — organized menu-item information and related operating details.\n• Calendar — dated and recurring operational work beyond today.\n• Discussions — internal team conversations tied to operations.\n• Capture Studio — bring in photos, files or voice material so useful information can be reviewed and organized.\n• Files — private operational documents and uploads.\n• Search — find records across the app.\n• Notifications — surface assignments and important changes.\n• Account / Security — login, profile and security controls.\n• Admin Center — manager-level control of users, permissions and system administration.\n\nIf you ask about any one of those, I can explain exactly how it is meant to work instead of repeating the feature list.`}\n"
-          if details not in s:
-              raise SystemExit('capabilityDetails marker not found')
-          s = s.replace(details, breakdown)
-          old_branch = "if(isCapability(question)&&history.length===0)return NextResponse.json({answer:capabilityAnswer(),citations:[]});if(isCapabilityFollowup(question,history))return NextResponse.json({answer:capabilityDetails(),citations:[]});"
-          new_branch = "if(isCapability(question)&&history.length===0)return NextResponse.json({answer:capabilityAnswer(),citations:[]});if(isCapabilityFollowup(question,history))return NextResponse.json({answer:capabilityFollowupDepth(history)==='breakdown'?capabilityBreakdown():capabilityDetails(),citations:[]});"
-          if old_branch not in s:
-              raise SystemExit('capability routing branch not found')
-          s = s.replace(old_branch, new_branch)
-          p.write_text(s)
-
-          p = Path('tests/ask-conversation.test.ts')
-          s = p.read_text()
-          s = s.replace("import { basicConversationAnswer, clearlyUnrelated, contextualSearchQuestion, isCapability, isCapabilityFollowup, isContinuation, type ConversationHistoryMessage } from '../lib/ask-conversation.ts';", "import { basicConversationAnswer, capabilityFollowupDepth, clearlyUnrelated, contextualSearchQuestion, isCapability, isCapabilityFollowup, isContinuation, type ConversationHistoryMessage } from '../lib/ask-conversation.ts';")
-          extra = """
-
-test('natural detail-seeking phrases are treated as continuations',()=>{
-  for(const q of ['can you go into more details about that','can you go into detail about that','what all does that mean'])assert.equal(isContinuation(q),true,q);
-});
-
-test('repeated capability follow-ups advance to a deeper breakdown instead of repeating',()=>{
-  const first:ConversationHistoryMessage[]=[...history,{role:'user',content:'Can you go into more details about that?'},{role:'assistant',content:'In practical terms, I can help with app navigation and features, approved restaurant knowledge, procedures and training.'}];
-  assert.equal(isCapabilityFollowup('What all does that mean?',first),true);
-  assert.equal(capabilityFollowupDepth(first),'breakdown');
-  assert.equal(capabilityFollowupDepth(history),'details');
-});
-"""
-          if "repeated capability follow-ups advance to a deeper breakdown" not in s:
-              s += extra
-          p.write_text(s)
-          PY
-      - name: Run targeted conversation tests
-        run: npx tsx --test tests/ask-conversation.test.ts tests/ask-conversation-domain.test.ts
-      - name: Type check
-        run: npx tsc --noEmit
-      - name: Commit verified repair
-        shell: bash
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add lib/ask-conversation.ts app/api/ask/route.ts tests/ask-conversation.test.ts
-          git commit -m "Fix repeated Ask AI capability follow-ups"
-          git push
+      - run: echo "This one-time repair workflow is retired."
