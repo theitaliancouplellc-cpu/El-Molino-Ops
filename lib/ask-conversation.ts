@@ -4,7 +4,7 @@ function norm(v:string){return String(v||'').toLowerCase().replace(/[’`]/g,"'"
 function any(s:string,patterns:RegExp[]){return patterns.some(p=>p.test(s));}
 function lastAssistant(history:ConversationHistoryMessage[]){return [...history].reverse().find(m=>m.role==='assistant'&&norm(m.content))?.content||'';}
 
-const greetingPatterns=[/^(hi|hello|hey|hiya|yo)( there)?$/, /^(morning|afternoon|evening|good day)$/, /^(good morning|good afternoon|good evening)( there)?$/, /^(yo|hey|hi) (what'?s good|what'?s up|how are you)$/];
+const greetingPatterns=[/^(hi|hello|hey|hiya|yo)( there)?$/, /^(morning|afternoon|evening|good day)$/, /^(good morning|good afternoon|good evening)( there)?$/, /^(hi|hello|hey|hiya|yo)[, ]+(good morning|good afternoon|good evening|morning|afternoon|evening)( there)?$/, /^(good morning|good afternoon|good evening)[, ]+(hi|hello|hey|hiya|yo)( there)?$/, /^(yo|hey|hi) (what'?s good|what'?s up|how are you)$/];
 const wellbeingPatterns=[/^(how are you( doing)?|how'?s it going|hows it going|how are things)$/, /^(how'?s your day|how is your day|you good|everything good)$/, /^(how'?s everything|how is everything|what are you up to|you ready|ready to go)$/, /^(what'?s up|whats up|sup)$/];
 const thanksPatterns=[/^(thanks|thank you|thx|ty|tysm)( so much| a lot| man| sir)?$/, /^(much appreciated|i appreciate it|appreciate it|appreciate you|that helps)$/, /^(perfect|awesome|great|nice|cool|excellent)( thanks| thank you)?$/, /^(that'?s perfect|that works|works for me|love it)$/];
 const acknowledgePatterns=[/^(ok|okay|alright|all right)( cool| great| perfect| sounds good)?$/, /^(got it|gotcha|understood|i understand|makes sense|that makes sense)$/, /^(sounds good|sounds great|sounds perfect|sure thing|fine|fair enough)$/, /^(right|correct|exactly|true|agreed|i agree|yessir|for sure)$/];
@@ -35,16 +35,16 @@ function capabilityContinuationAnswer(s:string,history:ConversationHistoryMessag
 
 export function basicConversationAnswer(q:string,history:ConversationHistoryMessage[]=[]){
   const s=norm(q);if(!s)return null;
-  if(any(s,greetingPatterns))return `Hey. I’m here. What do you want to work on for El Molino today?`;
-  if(any(s,wellbeingPatterns))return `I’m good and ready to help. What are we working on at El Molino?`;
-  if(any(s,thanksPatterns))return `Of course. What do you want to tackle next?`;
+  if(any(s,greetingPatterns))return `Good to hear from you. What can I help you with?`;
+  if(any(s,wellbeingPatterns))return `I’m doing well and ready to help. What do you want to work on?`;
+  if(any(s,thanksPatterns))return `Of course. What else can I help with?`;
   if(any(s,acknowledgePatterns))return `Got it. What do you want to do next?`;
-  if(any(s,shortAnswerPatterns)&&history.length)return `Got it. I’m following the conversation.`;
-  if(any(s,pausePatterns))return `No problem. I’ll hold here until you’re ready.`;
-  if(any(s,closingPatterns))return `Got it. I’ll be here when you’re ready.`;
+  if(any(s,shortAnswerPatterns)&&history.length)return `Got it. I’m following you.`;
+  if(any(s,pausePatterns))return `No problem. I’ll be here when you’re ready.`;
+  if(any(s,closingPatterns))return `Sounds good. I’ll be here when you need me.`;
   if(any(s,confusionPatterns)&&history.length){const prev=lastAssistant(history);return prev?`I can explain that differently. My last answer was trying to say: ${prev.slice(0,700)} Tell me which part was unclear and I’ll break it down.`:`Tell me what part is unclear and I’ll explain it another way.`;}
   if(any(s,provenancePatterns)&&history.length){const prev=lastAssistant(history);if(!prev)return `Tell me which answer you mean and I’ll explain what it was based on.`;if(/approved internal el molino knowledge|i found these approved related procedures/i.test(prev))return `That answer came from approved information already stored in El Molino Ops. I can also tell you which internal record or procedure it came from.`;if(/i can answer questions about this app|in practical terms i can help|el molino ops is organized/i.test(prev))return `That came from the app’s own feature/reference information, not from a restaurant fact lookup.`;return `That came from the context of our conversation and the El Molino/app information available to me. If it included a restaurant fact, I should only treat it as verified when it came from approved internal data.`;}
-  if(any(s,correctionPatterns)&&history.length)return `You’re right — I misunderstood the intent of your last message. Rephrase it however you naturally would, and I’ll answer the question itself instead of forcing it into a lookup.`;
+  if(any(s,correctionPatterns)&&history.length)return `You’re right — I misunderstood the intent of your last message. Say it however you naturally would and I’ll answer the question itself.`;
   if(any(s,repeatPatterns)&&history.length){const prev=lastAssistant(history);return prev||`I don’t have a previous assistant answer in this conversation yet.`;}
   const continuation=capabilityContinuationAnswer(s,history);if(continuation)return continuation;
   return null;
