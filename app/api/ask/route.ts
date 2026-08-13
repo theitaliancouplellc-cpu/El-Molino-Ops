@@ -34,8 +34,9 @@ async function readJsonBody(req:Request,maxBytes=1_000_000):Promise<{body?:any;t
 
 async function authenticatedUser(req:Request){
   const auth=req.headers.get('authorization')||'';const accessToken=auth.toLowerCase().startsWith('bearer ')?auth.slice(7).trim():'';if(!accessToken)return null;
-  const url=process.env.NEXT_PUBLIC_SUPABASE_URL||'https://asuvgjxdmxizbnjrccsz.supabase.co';
-  const anon=process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY||'sb_publishable_gtR8VfsQ5n-FPPbypnYKTw_f2k3Xyrk';
+  const url=process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anon=process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY||process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if(!url||!anon)return null;
   const client=createClient(url,anon,{global:{headers:{Authorization:`Bearer ${accessToken}`}},auth:{persistSession:false,autoRefreshToken:false}});
   const {data,error}=await client.auth.getUser(accessToken);return error?null:data.user;
 }

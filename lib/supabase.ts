@@ -1,7 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = 'https://asuvgjxdmxizbnjrccsz.supabase.co';
-const supabasePublishableKey = 'sb_publishable_gtR8VfsQ5n-FPPbypnYKTw_f2k3Xyrk';
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabasePublishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabasePublishableKey) throw new Error('Supabase public configuration is missing.');
 
 export const supabase = createClient(supabaseUrl, supabasePublishableKey, {
   auth: {
