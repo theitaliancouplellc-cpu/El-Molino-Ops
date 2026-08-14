@@ -43,7 +43,8 @@ This file is the persistent audit ledger for confirmed findings, verified fixes,
 
 ## Calendar / recurrence / timezones
 - [x] Existing tests cover supported recurrence grammar, weekly BYDAY expansion, month-boundary behavior, impossible monthly dates, and bounded parsing.
-- [ ] Test DST transitions and location-local date rendering against America/New_York boundaries.
+- [x] Biweekly/interval weekly BYDAY parity is now calculated from calendar-day ordinals rather than elapsed milliseconds, so crossing a daylight-saving transition cannot shift recurrence parity by a week.
+- [x] Added an America/New_York DST regression test verifying a 09:00 biweekly Monday event remains on the intended calendar weeks and local wall-clock hour across spring-forward.
 - [ ] Test edit/delete semantics for recurring events and long-horizon recurrence expansion limits.
 
 ## Notifications
@@ -75,13 +76,16 @@ This file is the persistent audit ledger for confirmed findings, verified fixes,
 - [x] Production build currently runs the automated test suite before Next.js build.
 - [x] Added a PWA service-worker contract test covering cached fallback on non-2xx static responses and fail-closed offline document navigation.
 - [x] Added targeted backup-integrity contracts for exporter-reported table failures, malformed export-status metadata, and valid complete exports.
+- [x] Added a DST-specific recurrence regression contract using `America/New_York`.
+- [ ] Current DST-fix CI run is still in progress; dependency installation passed and typecheck is running, with production build queued behind it.
 - [ ] Add database/RLS contract tests to CI where a disposable Supabase test environment can be safely provisioned.
 
 ## Deployment boundaries
-- [x] This audit pass made no manual Vercel deployment; database and GitHub/CI validation were preferred.
+- [x] This audit pass made no manual Vercel deployment; GitHub/CI validation was preferred for the code-only recurrence fix.
 - [ ] Verify environment-variable parity across Production/Preview/Development when AI provider credentials are introduced.
 
 ## Latest meaningful findings
-1. The browser backup exporter intentionally records failed table exports and 100,000-row safety-cap failures in the backup root `errors` array, but the restore dry-run validator did not inspect that field. A structurally valid but incomplete export could therefore pass validation. The validator now treats any exporter-reported error as blocking and also rejects malformed export-status metadata.
-2. Targeted tests now cover partial exports, malformed export status, and valid complete exports; CI is running typecheck/build verification for the change.
-3. Existing unresolved blockers remain unchanged: production AI still lacks a real provider credential, authenticated cross-role mutation tests still need a safe disposable role fixture, and Supabase leaked-password protection still requires Auth configuration access.
+1. Weekly `BYDAY` recurrence interval parity was derived from raw millisecond distance between local-midnight dates divided by `7*86400000`. Across DST, a calendar week can be 167 or 169 elapsed hours, so `Math.floor` could classify a week one interval early/late and make an every-2-weeks event appear on the wrong week.
+2. Weekly interval calculation now uses UTC-normalized calendar-day ordinals based only on the local year/month/day, preserving calendar-week parity independently of DST offset changes.
+3. A targeted America/New_York spring-forward regression test now locks the intended behavior: a 09:00 biweekly Monday event remains on March 9 and March 23, 2026 at 09:00 local time.
+4. Existing unresolved blockers remain unchanged: production AI still lacks a real provider credential, authenticated cross-role mutation tests still need a safe disposable role fixture, and Supabase leaked-password protection still requires Auth configuration access.
