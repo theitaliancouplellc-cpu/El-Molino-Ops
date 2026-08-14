@@ -20,8 +20,8 @@ function visibleHistory():LocalHistoryMessage[]{
 
 function plainAssistantText(value:unknown){
   return String(value??'')
-    .replace(/\*\*(.*?)\*\*/gs,'$1')
-    .replace(/__(.*?)__/gs,'$1')
+    .replace(/\*\*([\s\S]*?)\*\*/g,'$1')
+    .replace(/__([\s\S]*?)__/g,'$1')
     .replace(/`([^`]+)`/g,'$1')
     .replace(/^\s{0,3}#{1,6}\s+/gm,'')
     .replace(/^\s*[-*+]\s+/gm,'')
