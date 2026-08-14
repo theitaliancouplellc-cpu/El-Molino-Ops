@@ -4,6 +4,7 @@ export type PrimaryAgentResult={text:string;provider:string;model:string};
 
 const g=globalThis as typeof globalThis&{__elMolinoGatewayBlockedUntil?:number};
 function env(name:string){return String(process.env[name]||'').trim();}
+function enabled(){return env('VERCEL_AI_GATEWAY_ENABLED').toLowerCase()==='true';}
 function blocked(){return (g.__elMolinoGatewayBlockedUntil||0)>Date.now()}
 function blockFor(ms:number){g.__elMolinoGatewayBlockedUntil=Date.now()+Math.min(Math.max(ms,30_000),6*60*60_000)}
 
@@ -14,10 +15,11 @@ async function fetchWithTimeout(url:string,init:RequestInit,timeoutMs=20_000){
 }
 
 export function primaryAgentConfigured(){
-  return Boolean(env('AI_GATEWAY_API_KEY')||env('VERCEL_OIDC_TOKEN'));
+  return enabled()&&Boolean(env('AI_GATEWAY_API_KEY')||env('VERCEL_OIDC_TOKEN'));
 }
 
 export async function runPrimaryAgent(messages:AIMessage[]):Promise<PrimaryAgentResult|null>{
+  if(!enabled())return null;
   const token=env('AI_GATEWAY_API_KEY')||env('VERCEL_OIDC_TOKEN');
   if(!token||blocked())return null;
   const model=env('EL_MOLINO_AGENT_MODEL')||'google/gemini-3.6-flash';
@@ -31,7 +33,7 @@ export async function runPrimaryAgent(messages:AIMessage[]):Promise<PrimaryAgent
     const raw=await response.text();
     if(!response.ok){
       const low=raw.toLowerCase();
-      if(response.status===403&&(low.includes('credit card')||low.includes('customer_verification_required')))blockFor(60*60_000);
+      if(response.status===403&&(low.includes('credit card')||low.includes('customer_verification_required')))blockFor(6*60*60_000);
       else if(response.status===401||response.status===402)blockFor(30*60_000);
       else if(response.status===429)blockFor(60_000);
       console.error('PRIMARY_AI_AGENT_FAILED',response.status,raw.slice(0,500));
