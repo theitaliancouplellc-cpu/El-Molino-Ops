@@ -6,7 +6,7 @@ import type { LocalAIMessage } from './local-ai-prompt';
 type InMessage={id:string;messages:LocalAIMessage[]};
 type OutMessage={id:string;ok:boolean;text?:string;model?:string;device?:string;error?:string};
 
-const PRIMARY_MODEL='onnx-community/Qwen3-0.6B-Instruct-ONNX';
+const PRIMARY_MODEL='onnx-community/Qwen2.5-0.5B-Instruct';
 const FALLBACK_MODEL='HuggingFaceTB/SmolLM2-360M-Instruct';
 let generatorPromise:Promise<any>|null=null;
 let loadedDevice='';
