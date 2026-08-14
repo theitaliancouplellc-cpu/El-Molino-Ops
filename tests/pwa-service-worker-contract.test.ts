@@ -7,7 +7,7 @@ const sw=readFileSync(new URL('../public/sw.js',import.meta.url),'utf8');
 test('cached static assets survive deployment-time 404 or 5xx responses',()=>{
   assert.match(sw,/if\(res\.ok\)\{/);
   assert.match(sw,/if\(cacheable\)\{const hit=await caches\.match\(req\);if\(hit\)return hit\}return res/);
-  assert.match(sw,/url\.pathname\.startsWith\('\/_next\/static\/'\).*networkFirst\(req,true\)/s);
+  assert.match(sw,/url\.pathname\.startsWith\('\/_next\/static\/'\)[\s\S]*networkFirst\(req,true\)/);
 });
 
 test('document navigations stay network-only and fail closed to offline HTML',()=>{
