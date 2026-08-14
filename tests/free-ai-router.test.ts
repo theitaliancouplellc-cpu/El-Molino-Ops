@@ -40,12 +40,27 @@ test('provider config never exposes secret values', () => {
   for (const value of Object.values(result)) assert.equal(typeof value, 'boolean');
 });
 
-test('disabled free-only lane is reported as disabled even with a key',()=>{
+test('disabled Groq free-only lane is reported as disabled even with a key',()=>{
   const beforeKey=process.env.GROQ_API_KEY,beforeFlag=process.env.GROQ_FREE_ONLY;
   process.env.GROQ_API_KEY='fake-test-key';process.env.GROQ_FREE_ONLY='false';
   assert.equal(configuredFreeProviders().groq,false);
   if(beforeKey===undefined)delete process.env.GROQ_API_KEY;else process.env.GROQ_API_KEY=beforeKey;
   if(beforeFlag===undefined)delete process.env.GROQ_FREE_ONLY;else process.env.GROQ_FREE_ONLY=beforeFlag;
+});
+
+test('Cloudflare hosted lane requires account, token, and free-only enablement',()=>{
+  const beforeToken=process.env.CLOUDFLARE_API_TOKEN;
+  const beforeAccount=process.env.CLOUDFLARE_ACCOUNT_ID;
+  const beforeFlag=process.env.CLOUDFLARE_FREE_ONLY;
+  process.env.CLOUDFLARE_API_TOKEN='fake-test-token';
+  process.env.CLOUDFLARE_ACCOUNT_ID='fake-account';
+  process.env.CLOUDFLARE_FREE_ONLY='true';
+  assert.equal(configuredFreeProviders().cloudflare,true);
+  process.env.CLOUDFLARE_FREE_ONLY='false';
+  assert.equal(configuredFreeProviders().cloudflare,false);
+  if(beforeToken===undefined)delete process.env.CLOUDFLARE_API_TOKEN;else process.env.CLOUDFLARE_API_TOKEN=beforeToken;
+  if(beforeAccount===undefined)delete process.env.CLOUDFLARE_ACCOUNT_ID;else process.env.CLOUDFLARE_ACCOUNT_ID=beforeAccount;
+  if(beforeFlag===undefined)delete process.env.CLOUDFLARE_FREE_ONLY;else process.env.CLOUDFLARE_FREE_ONLY=beforeFlag;
 });
 
 function lane(id:string,status:number,text='',detail=''):AILane{
