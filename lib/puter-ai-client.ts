@@ -3,6 +3,7 @@
 import type { LocalAIMessage } from './local-ai-prompt';
 
 type PuterChatResponse={message?:{content?:unknown}};
+type PuterModel={id?:string;provider?:string;cost?:{input?:number;output?:number}};
 type PuterAPI={
   auth?:{
     isSignedIn?:()=>boolean;
@@ -10,6 +11,7 @@ type PuterAPI={
   };
   ai?:{
     chat?:(messages:LocalAIMessage[],options?:Record<string,unknown>)=>Promise<PuterChatResponse>;
+    listModels?:()=>Promise<PuterModel[]>;
   };
 };
 
@@ -66,10 +68,24 @@ function withTimeout<T>(promise:Promise<T>,ms:number){
   });
 }
 
+async function currentModelPlan(api:PuterAPI){
+  const verifiedDefault='gpt-5.4-nano';
+  if(!api.ai?.listModels)return [verifiedDefault];
+  try{
+    const catalog=await withTimeout(api.ai.listModels(),8_000);
+    const ids=catalog.map(model=>String(model?.id||'').trim()).filter(Boolean);
+    const zeroCost=catalog.filter(model=>model?.cost?.input===0&&model?.cost?.output===0).map(model=>String(model.id||'').trim()).filter(Boolean);
+    const preferred=[...zeroCost,verifiedDefault,...ids.filter(id=>/gpt-5.*nano|gemini.*flash|qwen.*(?:flash|instruct)/i.test(id))];
+    return [...new Set(preferred)].filter(id=>ids.includes(id)).slice(0,4).length
+      ? [...new Set(preferred)].filter(id=>ids.includes(id)).slice(0,4)
+      : [verifiedDefault];
+  }catch{return [verifiedDefault];}
+}
+
 export async function runPuterBrowserAI(messages:LocalAIMessage[],authAttempt?:Promise<boolean>|null){
   const api=await preparePuterAI();
   if(authAttempt){const ok=await withTimeout(authAttempt,20_000).catch(()=>false);if(!ok)throw new Error('Puter AI authorization was not completed');}
-  const models=['gemini-3.6-flash','gpt-5.4-nano','qwen3.6-flash'];
+  const models=await currentModelPlan(api);
   let lastError='Puter AI did not return a response';
   for(const model of models){
     try{
