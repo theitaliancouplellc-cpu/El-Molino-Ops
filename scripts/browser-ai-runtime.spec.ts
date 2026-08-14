@@ -1,6 +1,6 @@
 import { test,expect } from '@playwright/test';
 
-test('Ask El Molino local worker performs contextual inference in browser',async({page})=>{
+test('Ask El Molino browser AI stack loads hosted SDK and performs local contextual inference',async({page})=>{
   test.setTimeout(300_000);
   const browserErrors:string[]=[];
   const consoleLines:string[]=[];
@@ -8,6 +8,11 @@ test('Ask El Molino local worker performs contextual inference in browser',async
   page.on('console',message=>consoleLines.push(`${message.type()}: ${message.text()}`));
   await page.goto('http://127.0.0.1:3000/ai-runtime-test',{waitUntil:'domcontentloaded'});
   await expect(page.locator('h1')).toHaveText('AI Runtime Test');
+
+  await page.waitForFunction(()=>Boolean((window as any).puter?.ai?.chat),undefined,{timeout:30_000});
+  const puterReady=await page.evaluate(()=>Boolean((window as any).puter?.ai?.chat));
+  expect(puterReady,'keyless hosted Puter AI SDK did not initialize').toBe(true);
+
   await page.waitForFunction(()=>Boolean(window.__EL_MOLINO_AI_BROWSER_SMOKE__?.ok||window.__EL_MOLINO_AI_BROWSER_SMOKE__?.error),undefined,{timeout:260_000});
   const result=await page.evaluate(()=>window.__EL_MOLINO_AI_BROWSER_SMOKE__);
   console.log('Browser AI result:',JSON.stringify(result));
