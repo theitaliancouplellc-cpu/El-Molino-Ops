@@ -8,6 +8,11 @@ type Pending={resolve:(value:{text:string;model:string;device:string})=>void;rej
 let worker:Worker|null=null;
 const pending=new Map<string,Pending>();
 
+function resetWorker(reason?:Error){
+  worker?.terminate();worker=null;
+  if(reason){for(const [id,p] of pending){window.clearTimeout(p.timer);p.reject(reason);pending.delete(id)}}
+}
+
 function ensureWorker(){
   if(worker)return worker;
   worker=new Worker(new URL('./local-ai.worker.ts',import.meta.url),{type:'module'});
@@ -17,11 +22,7 @@ function ensureWorker(){
     if(data.ok&&data.text)p.resolve({text:data.text,model:data.model||'local-model',device:data.device||'local'});
     else p.reject(new Error(data.error||'Local AI failed'));
   };
-  worker.onerror=(event)=>{
-    const error=new Error(event.message||'Local AI worker failed');
-    for(const [id,p] of pending){window.clearTimeout(p.timer);p.reject(error);pending.delete(id)}
-    worker?.terminate();worker=null;
-  };
+  worker.onerror=(event)=>resetWorker(new Error(event.message||'Local AI worker failed'));
   return worker;
 }
 
@@ -32,7 +33,12 @@ export async function runLocalBrowserAI(messages:LocalAIMessage[],timeoutMs=180_
   const id=`local-ai-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const w=ensureWorker();
   return new Promise<{text:string;model:string;device:string}>((resolve,reject)=>{
-    const timer=window.setTimeout(()=>{pending.delete(id);reject(new Error('Local AI timed out while loading or generating'))},Math.max(30_000,timeoutMs));
+    const timer=window.setTimeout(()=>{
+      const p=pending.get(id);if(!p)return;
+      pending.delete(id);
+      resetWorker();
+      reject(new Error('Local AI timed out while loading or generating'));
+    },Math.max(30_000,timeoutMs));
     pending.set(id,{resolve,reject,timer});
     w.postMessage({id,messages});
   });
