@@ -62,11 +62,20 @@ test('Ask bridge authenticates hosted requests and falls back locally without re
   assert.match(bridge,/\.\.\.\(remotePayload&&typeof remotePayload==='object'\?remotePayload:\{\}\)/);
 });
 
-test('local worker has WebGPU first and WASM fallback with a conversational instruct model',()=>{
+test('local worker uses capable WebGPU primary and lighter WASM emergency model',()=>{
   const worker=readFileSync(new URL('../lib/local-ai.worker.ts',import.meta.url),'utf8');
   assert.match(worker,/Qwen2\.5-0\.5B-Instruct/);
+  assert.match(worker,/SmolLM2-360M-Instruct/);
   assert.match(worker,/device:'webgpu'/);
   assert.match(worker,/dtype:'q4f16'/);
   assert.match(worker,/dtype:'q8'/);
   assert.match(worker,/max_new_tokens:360/);
+});
+
+test('hung local AI worker is terminated so the next request can recover',()=>{
+  const client=readFileSync(new URL('../lib/local-ai-client.ts',import.meta.url),'utf8');
+  assert.match(client,/function resetWorker/);
+  assert.match(client,/worker\?\.terminate\(\)/);
+  assert.match(client,/resetWorker\(\)/);
+  assert.match(client,/Local AI timed out while loading or generating/);
 });
