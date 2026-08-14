@@ -12,6 +12,19 @@ let generatorPromise:Promise<any>|null=null;
 let loadedDevice='';
 let loadedModel='';
 
+async function usableWebGPU(){
+  if(typeof navigator==='undefined'||!('gpu' in navigator))return false;
+  const gpu=(navigator as any).gpu;
+  if(!gpu?.requestAdapter)return false;
+  try{
+    const adapter=await Promise.race([
+      gpu.requestAdapter(),
+      new Promise<null>(resolve=>setTimeout(()=>resolve(null),2500))
+    ]);
+    return Boolean(adapter);
+  }catch{return false;}
+}
+
 async function loadFallback(){
   const generator=await pipeline('text-generation',FALLBACK_MODEL,{dtype:'q8'} as any);
   loadedDevice='wasm-q8';loadedModel=FALLBACK_MODEL;
@@ -21,8 +34,7 @@ async function loadFallback(){
 async function loadGenerator(){
   if(generatorPromise)return generatorPromise;
   generatorPromise=(async()=>{
-    const canWebGPU=typeof navigator!=='undefined'&&'gpu' in navigator;
-    if(canWebGPU){
+    if(await usableWebGPU()){
       try{
         const generator=await pipeline('text-generation',PRIMARY_MODEL,{device:'webgpu',dtype:'q4f16'} as any);
         loadedDevice='webgpu-q4f16';loadedModel=PRIMARY_MODEL;
