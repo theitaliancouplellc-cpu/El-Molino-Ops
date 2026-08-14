@@ -6,22 +6,41 @@ on:
     paths: [.github/workflows/one-time-dependency-audit.yml]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://asuvgjxdmxizbnjrccsz.supabase.co
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_gtR8VfsQ5n-FPPbypnYKTw_f2k3Xyrk
     steps:
       - uses: actions/checkout@v4
         with:
           ref: audit-finalize-20260814
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: package-lock.json
+      - name: Regenerate locked dependency graph
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
       - name: Audit full locked dependency graph
         run: npm audit --audit-level=high
       - name: Audit production locked dependency graph
         run: npm audit --omit=dev --audit-level=high
+      - name: Install, test, typecheck, build
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+          npx tsc --noEmit
+          npm run build
+      - name: Commit verified dependency lockfile
+        shell: bash
+        run: |
+          git config user.name "El Molino Audit Bot"
+          git config user.email "audit-bot@users.noreply.github.com"
+          git add package-lock.json
+          git diff --cached --quiet && exit 0
+          git commit -m "Lock audited dependency fixes"
+          git push origin HEAD:audit-finalize-20260814
