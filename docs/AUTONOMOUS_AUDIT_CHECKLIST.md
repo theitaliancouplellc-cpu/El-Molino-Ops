@@ -60,6 +60,7 @@ This file is the persistent audit ledger for confirmed findings, verified fixes,
 - [ ] Test double-submit creation, concurrent task completion, concurrent record edits, duplicate attachment links, and optimistic UI rollback.
 
 ## Performance
+- [x] Removed the Supabase `auth_rls_initplan` warning from `discussion_messages_author_update` by evaluating `auth.uid()` through a scalar subquery once per statement while preserving the same authorization semantics.
 - [ ] Re-check advisors after meaningful schema/index changes.
 - [ ] Do not remove currently unused indexes solely from young-database statistics; wait for representative workload data.
 - [ ] Measure high-cardinality files/tasks/ops screens and API request sizes before optimizing.
@@ -75,5 +76,6 @@ This file is the persistent audit ledger for confirmed findings, verified fixes,
 - [ ] Avoid deployments for database-only or documentation-only audit work unless runtime verification specifically requires one.
 - [ ] Verify environment-variable parity across Production/Preview/Development when AI provider credentials are introduced.
 
-## Latest meaningful finding
-A confirmed file-metadata authorization defect was fixed: the `files_manager_update` RLS policy allowed an original uploader to update the row, and no trigger prevented rewriting physical-file identity fields such as `storage_bucket`, `storage_path`, `uploaded_by`, filename, MIME type, size, kind, or creation time. A database trigger now makes those fields immutable while preserving legitimate mutable metadata/deletion workflows.
+## Latest meaningful findings
+1. A confirmed file-metadata authorization defect was fixed: the `files_manager_update` RLS policy allowed an original uploader to update the row, and no trigger prevented rewriting physical-file identity fields such as `storage_bucket`, `storage_path`, `uploaded_by`, filename, MIME type, size, kind, or creation time. A database trigger now makes those fields immutable while preserving legitimate mutable metadata/deletion workflows.
+2. Supabase's performance advisor flagged `discussion_messages_author_update` because `auth.uid()` was being re-evaluated per row. The policy now uses `(select auth.uid())`; the advisor warning disappeared after the migration with no change to the policy's source-location or role/author checks.
