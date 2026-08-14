@@ -1,5 +1,6 @@
 import { runPrimaryAgent } from './primary-ai-agent';
 import { groqConfigured, runGroqAI } from './groq-ai';
+import { cloudflareConfigured, runCloudflareAI } from './cloudflare-ai';
 
 export type AIRole = 'system' | 'user' | 'assistant';
 export type AIMessage = { role: AIRole; content: string };
@@ -16,6 +17,7 @@ function cooled(id:string,provider?:string){return (state.cooldowns.get(id)||0)>
 function cool(id:string,ms:number){const safe=Number.isFinite(ms)?Math.min(Math.max(1000,ms),24*60*60_000):60_000;state.cooldowns.set(id,now()+safe);}
 function coolProvider(provider:string,ms:number){cool(providerKey(provider),ms);}
 function groqFreeEnabled(){return String(process.env.GROQ_FREE_ONLY||'true').trim().toLowerCase()!=='false';}
+function cloudflareFreeEnabled(){return String(process.env.CLOUDFLARE_FREE_ONLY||'true').trim().toLowerCase()!=='false';}
 
 export function resetAIRouterStateForTests(){state.cooldowns.clear();}
 
@@ -53,9 +55,13 @@ export async function runLanePlan(lanes:AILane[],start=0):Promise<AIRouterResult
   return null;
 }
 
-export function configuredFreeProviders(){return {openrouter:false,gemini:false,groq:groqConfigured()&&groqFreeEnabled(),githubModels:false,cloudflare:false,vercelGateway:true};}
+export function configuredFreeProviders(){return {openrouter:false,gemini:false,groq:groqConfigured()&&groqFreeEnabled(),githubModels:false,cloudflare:cloudflareConfigured()&&cloudflareFreeEnabled(),vercelGateway:true};}
 
 export async function runFreeAI(messages:AIMessage[]):Promise<AIRouterResult|null>{
+  if(cloudflareConfigured()&&cloudflareFreeEnabled()){
+    const cloudflare=await runCloudflareAI(messages);
+    if(cloudflare)return {text:cloudflare.text,provider:cloudflare.provider,model:cloudflare.model,attempts:[{provider:cloudflare.provider,model:cloudflare.model,ok:true,status:200}]};
+  }
   if(groqConfigured()&&groqFreeEnabled()){
     const groq=await runGroqAI(messages);
     if(groq)return {text:groq.text,provider:groq.provider,model:groq.model,attempts:[{provider:groq.provider,model:groq.model,ok:true,status:200}]};
