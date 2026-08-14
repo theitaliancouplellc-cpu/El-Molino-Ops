@@ -102,7 +102,7 @@ test('PWA update adoption waits for genuinely unsaved form state',()=>{
 
 test('service worker never caches authenticated document responses or non-GET mutations',()=>{
   assert.match(sw,/if\(req\.method!==['"]GET['"]\)return/);
-  assert.match(sw,/req\.mode==='navigate'\|\|req\.destination==='document'/);
+  assert.match(sw,/if\(req\.mode==='navigate'\|\|req\.destination==='document'\)\{event\.respondWith\(fetch\(req,\{cache:'no-store'\}\)/);
   assert.match(sw,/new Response\(OFFLINE_HTML/);
-  assert.doesNotMatch(sw,/cache\.put\(req,res\.clone\(\)\)[\s\S]*navigate/);
+  assert.match(sw,/if\(cacheable\)\{const cache=await caches\.open\(CACHE\);await cache\.put\(req,res\.clone\(\)\)\}/);
 });
