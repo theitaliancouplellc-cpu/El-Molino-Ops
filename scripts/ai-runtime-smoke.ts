@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { pipeline } from '@huggingface/transformers';
 
 type ChatMessage={role:'system'|'user'|'assistant';content:string};
-const MODEL={name:'HuggingFaceTB/SmolLM2-360M-Instruct',dtype:'q4'} as const;
+const MODEL={name:'onnx-community/SmolLM2-135M-Instruct-ONNX-MHA',dtype:'q4'} as const;
 
 function plainTranscript(messages:ChatMessage[]){
   return messages.map(message=>`${message.role==='system'?'System':message.role==='user'?'User':'Assistant'}: ${message.content}`).join('\n')+'\nAssistant:';
