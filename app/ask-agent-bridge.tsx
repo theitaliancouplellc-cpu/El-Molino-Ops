@@ -76,7 +76,7 @@ export default function AskAgentBridge(){
         if(remote.ok&&!remotePayload?.degraded)return remote;
       }catch{}
 
-      const messages=buildLocalAIMessages({question,history:body.history,knowledge:body.knowledge,procedures:body.procedures});
+      const messages=buildLocalAIMessages({question,history:body.history,knowledge:body.knowledge,procedures:body.procedures,liveContext:remotePayload?.liveContext});
 
       try{
         const hosted=await runPuterBrowserAI(messages,puterAuthAttempt);
