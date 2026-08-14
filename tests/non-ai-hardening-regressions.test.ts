@@ -14,6 +14,7 @@ const diagnostics=readFileSync(new URL('../app/admin/diagnostics/page.tsx',impor
 const restore=readFileSync(new URL('../app/admin/restore/page.tsx',import.meta.url),'utf8');
 const capture=readFileSync(new URL('../app/capture/page.tsx',import.meta.url),'utf8');
 const root=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
+const pwa=readFileSync(new URL('../app/pwa-register.tsx',import.meta.url),'utf8');
 const sw=readFileSync(new URL('../public/sw.js',import.meta.url),'utf8');
 
 test('task mutations use stale-write protection and newest bounded comments',()=>{
@@ -89,6 +90,14 @@ test('capture cannot upload a stopped recording after the page is unmounted',()=
 test('diagnostic restore detects concurrent restore and blocks duplicate actions',()=>{
   assert.match(diagnostics,/if\(busy\)return/);
   assert.match(diagnostics,/\.not\('deleted_at','is',null\)\.select\('id'\)\.maybeSingle\(\)/);
+});
+
+test('PWA update adoption waits for genuinely unsaved form state',()=>{
+  assert.match(pwa,/function hasUnsavedFormState\(\)/);
+  assert.match(pwa,/el\.value!==el\.defaultValue/);
+  assert.match(pwa,/el\.checked!==el\.defaultChecked/);
+  assert.match(pwa,/option\.selected!==option\.defaultSelected/);
+  assert.match(pwa,/dirty:dirty\(\)/);
 });
 
 test('service worker never caches authenticated document responses or non-GET mutations',()=>{
