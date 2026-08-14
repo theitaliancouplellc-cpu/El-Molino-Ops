@@ -1,0 +1,59 @@
+name: One-time export verified audit patch
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  export:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://asuvgjxdmxizbnjrccsz.supabase.co
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_gtR8VfsQ5n-FPPbypnYKTw_f2k3Xyrk
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Generate verified source patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import textwrap
+          src=Path('.github/workflows/one-time-post-implementation-audit-patch.yml').read_text()
+          marker="cat > /tmp/patch.py <<'PY'\n"
+          start=src.index(marker)+len(marker)
+          end=src.index("\n          PY",start)
+          script=textwrap.dedent(src[start:end])
+          script=script.replace("re.subn(pattern,replacement,s,count=count,flags=re.S)","re.subn(pattern,lambda _m: replacement,s,count=count,flags=re.S)")
+          script=script.replace("/Minimum acceptable °F.*tempForm\\.min_f/s","/Minimum acceptable °F[\\s\\S]*tempForm\\.min_f/")
+          Path('/tmp/patch.py').write_text(script)
+          PY
+          python /tmp/patch.py
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          npm ci --no-audit --no-fund
+          npm test
+          npx tsc --noEmit
+          npm run build
+      - name: Collect patched files
+        run: |
+          mkdir -p verified-patch/app/{performance,inventory,safety,logbook,training,cash,schedule,ops} verified-patch/lib verified-patch/tests
+          cp app/performance/page.tsx verified-patch/app/performance/page.tsx
+          cp app/inventory/page.tsx verified-patch/app/inventory/page.tsx
+          cp app/safety/page.tsx verified-patch/app/safety/page.tsx
+          cp app/logbook/page.tsx verified-patch/app/logbook/page.tsx
+          cp app/training/page.tsx verified-patch/app/training/page.tsx
+          cp app/cash/page.tsx verified-patch/app/cash/page.tsx
+          cp app/schedule/page.tsx verified-patch/app/schedule/page.tsx
+          cp app/ops/page.tsx verified-patch/app/ops/page.tsx
+          cp lib/ops-modules.ts verified-patch/lib/ops-modules.ts
+          cp package-lock.json verified-patch/package-lock.json
+          cp tests/post-implementation-audit.test.ts verified-patch/tests/post-implementation-audit.test.ts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verified-audit-patch
+          path: verified-patch
+          retention-days: 1
