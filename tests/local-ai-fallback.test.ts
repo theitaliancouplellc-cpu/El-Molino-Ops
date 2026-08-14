@@ -71,7 +71,7 @@ test('local worker uses compatible Qwen2.5 WebGPU primary and verified 135M q4 W
   assert.match(worker,/dtype:'q4'/);
   assert.match(worker,/wasm-q4/);
   assert.match(worker,/requestAdapter\(\)/);
-  assert.match(worker,/max_new_tokens:160/);
+  assert.match(worker,/fallback\?72:160/);
   assert.match(worker,/LOCAL_AI_WEBGPU_GENERATION_FAILED/);
   assert.match(worker,/switchToFallback\(\)/);
 });
