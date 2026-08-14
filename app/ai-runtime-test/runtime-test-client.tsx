@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect,useState } from 'react';
-import { buildLocalAIMessages } from '@/lib/local-ai-prompt';
 import { runLocalBrowserAI } from '@/lib/local-ai-client';
+import type { LocalAIMessage } from '@/lib/local-ai-prompt';
 
 type Result={ok:boolean;text?:string;model?:string;device?:string;error?:string};
 
@@ -14,16 +14,13 @@ export default function BrowserAIRuntimeTest(){
     let live=true;
     void (async()=>{
       try{
-        const messages=buildLocalAIMessages({
-          question:'What is the code word? Reply with just the word.',
-          history:[
-            {role:'user',content:'Remember this for our conversation: the code word is mango.'},
-            {role:'assistant',content:'Got it. The code word is mango.'}
-          ],
-          knowledge:[{title:'Closing cash',content:'Managers reconcile the drawer before final close.',status:'approved'}],
-          procedures:[{title:'Closing procedure',description:'Reconcile cash, verify totals, secure funds.',status:'published'}]
-        });
-        const response=await runLocalBrowserAI(messages,240_000);
+        const messages:LocalAIMessage[]=[
+          {role:'system',content:'You are a concise chat assistant. Use conversation history.'},
+          {role:'user',content:'Remember this for our conversation: the code word is mango.'},
+          {role:'assistant',content:'Got it. The code word is mango.'},
+          {role:'user',content:'What is the code word? Reply with just the word.'}
+        ];
+        const response=await runLocalBrowserAI(messages,180_000);
         const next:Result={ok:/mango/i.test(response.text),text:response.text,model:response.model,device:response.device};
         if(live){window.__EL_MOLINO_AI_BROWSER_SMOKE__=next;setResult(next)}
       }catch(error){
