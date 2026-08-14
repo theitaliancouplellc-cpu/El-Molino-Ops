@@ -7,14 +7,41 @@ const MODELS=[
   {name:'HuggingFaceTB/SmolLM2-360M-Instruct',dtype:'q8'},
 ] as const;
 
-function assistantText(result:any){
+function plainTranscript(messages:ChatMessage[]){
+  return messages.map(message=>`${message.role==='system'?'System':message.role==='user'?'User':'Assistant'}: ${message.content}`).join('\n')+'\nAssistant:';
+}
+
+async function renderPrompt(generator:any,messages:ChatMessage[]){
+  const tokenizer=generator?.tokenizer;
+  if(tokenizer?.apply_chat_template){
+    try{
+      const rendered=await Promise.resolve(tokenizer.apply_chat_template(messages,{tokenize:false,add_generation_prompt:true} as any));
+      if(typeof rendered==='string'&&rendered.trim())return rendered;
+    }catch(error){
+      console.warn('CHAT_TEMPLATE_FAILED',error instanceof Error?error.message:'unknown');
+    }
+  }
+  return plainTranscript(messages);
+}
+
+function assistantText(result:any,prompt=''){
   const generated=result?.[0]?.generated_text;
-  if(typeof generated==='string')return generated.trim();
+  if(typeof generated==='string'){
+    const text=generated.trim();
+    if(prompt&&text.startsWith(prompt.trim()))return text.slice(prompt.trim().length).trim();
+    return text;
+  }
   if(Array.isArray(generated)){
     const last=[...generated].reverse().find((m:any)=>m?.role==='assistant'&&typeof m.content==='string');
     return String(last?.content||'').trim();
   }
   return '';
+}
+
+async function generate(generator:any,messages:ChatMessage[],max_new_tokens=24){
+  const prompt=await renderPrompt(generator,messages);
+  const result=await generator(prompt,{max_new_tokens,do_sample:false,return_full_text:false} as any);
+  return assistantText(result,prompt);
 }
 
 async function verifyModel(model:string,dtype:string){
@@ -25,8 +52,7 @@ async function verifyModel(model:string,dtype:string){
     {role:'system',content:'You are a concise helpful chat assistant.'},
     {role:'user',content:'What is 2 + 2? Reply with just the number.'}
   ];
-  const basic=await generator(basicMessages,{max_new_tokens:24,do_sample:false} as any);
-  const basicText=assistantText(basic);
+  const basicText=await generate(generator,basicMessages);
   console.log(`${model} basic inference:`,JSON.stringify(basicText));
   assert.ok(basicText.length>0,`${model} returned empty text`);
   assert.match(basicText,/4/,`${model} failed basic conversational inference`);
@@ -37,8 +63,7 @@ async function verifyModel(model:string,dtype:string){
     {role:'assistant',content:'Got it. The code word is mango.'},
     {role:'user',content:'What is the code word? Reply with just the word.'}
   ];
-  const contextual=await generator(contextualMessages,{max_new_tokens:24,do_sample:false} as any);
-  const contextualText=assistantText(contextual);
+  const contextualText=await generate(generator,contextualMessages);
   console.log(`${model} history inference:`,JSON.stringify(contextualText));
   assert.match(contextualText,/mango/i,`${model} failed conversational history test`);
   return {model,basic:basicText,context:contextualText};
