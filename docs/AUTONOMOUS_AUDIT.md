@@ -20,6 +20,7 @@ This file tracks verified findings and unresolved audit work. Items are only mar
 - [x] Non-manager comment updates can no longer rewrite identity/ownership/entity fields.
 - [x] Notification content/recipient/location/link/data/creation metadata are immutable on user updates; only read state remains mutable.
 - [x] Checklist run-item identity and creation metadata are immutable; completion actor/timestamp are server-derived.
+- [x] Discussion-message UPDATE policy now requires the source message room to belong to the caller's current location, closing a manager cross-location update/move path.
 - [ ] Supabase Auth leaked-password protection remains disabled; requires Auth configuration change rather than database migration.
 - [ ] Perform live employee-role RLS tests when a non-admin authenticated test identity exists; current project has only an admin profile.
 - [ ] Review `ops_records_update` field-level mutation rights; current RLS allows creator/assignee updates with only location enforced in `WITH CHECK`, but intended employee-edit semantics need to be established before tightening.
@@ -64,7 +65,7 @@ This file tracks verified findings and unresolved audit work. Items are only mar
 
 ## CI / build
 - [x] Latest application build passed the current 59-test suite before production deployment.
-- [ ] Add database-security contract tests for task/comment/notification/checklist field immutability to CI or a migration verification script.
+- [ ] Add database-security contract tests for task/comment/notification/checklist/discussion field and location immutability to CI or a migration verification script.
 
 ## Deployment boundaries
 - [x] Vercel AI Gateway card-verification failure identified; direct provider path added.
