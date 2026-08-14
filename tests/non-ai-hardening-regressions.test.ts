@@ -104,5 +104,5 @@ test('service worker never caches authenticated document responses or non-GET mu
   assert.match(sw,/if\(req\.method!==['"]GET['"]\)return/);
   assert.match(sw,/req\.mode==='navigate'\|\|req\.destination==='document'/);
   assert.match(sw,/new Response\(OFFLINE_HTML/);
-  assert.doesNotMatch(sw,/cache\.put\(req,res\.clone\(\)\).*navigate/s);
+  assert.doesNotMatch(sw,/cache\.put\(req,res\.clone\(\)\)[\s\S]*navigate/);
 });
