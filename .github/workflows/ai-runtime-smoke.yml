@@ -6,6 +6,10 @@ on:
     paths:
       - '.github/workflows/ai-runtime-smoke.yml'
       - 'scripts/ai-runtime-smoke.ts'
+      - 'scripts/browser-ai-runtime.spec.ts'
+      - 'app/ai-runtime-test/**'
+      - 'lib/local-ai*.ts'
+      - 'package.json'
 
 permissions:
   contents: read
@@ -13,7 +17,7 @@ permissions:
 jobs:
   local-model-inference:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -25,3 +29,35 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Run actual Transformers.js inference
         run: npx tsx scripts/ai-runtime-smoke.ts
+
+  browser-worker-inference:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package.json
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Build test-enabled app
+        run: ENABLE_AI_RUNTIME_TEST=1 npm run build
+      - name: Start test server
+        run: |
+          ENABLE_AI_RUNTIME_TEST=1 npm start > /tmp/el-molino-next.log 2>&1 &
+          echo $! > /tmp/el-molino-next.pid
+          for i in {1..60}; do
+            if curl -fsS http://127.0.0.1:3000/ai-runtime-test >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          cat /tmp/el-molino-next.log
+          exit 1
+      - name: Run browser worker inference
+        run: npx playwright test scripts/browser-ai-runtime.spec.ts --reporter=line
+      - name: Show server log on failure
+        if: failure()
+        run: cat /tmp/el-molino-next.log || true
