@@ -2,10 +2,7 @@ import assert from 'node:assert/strict';
 import { pipeline } from '@huggingface/transformers';
 
 type ChatMessage={role:'system'|'user'|'assistant';content:string};
-const MODELS=[
-  {name:'onnx-community/Qwen2.5-0.5B-Instruct',dtype:'q8'},
-  {name:'HuggingFaceTB/SmolLM2-360M-Instruct',dtype:'q8'},
-] as const;
+const MODEL={name:'HuggingFaceTB/SmolLM2-360M-Instruct',dtype:'q4'} as const;
 
 function plainTranscript(messages:ChatMessage[]){
   return messages.map(message=>`${message.role==='system'?'System':message.role==='user'?'User':'Assistant'}: ${message.content}`).join('\n')+'\nAssistant:';
@@ -44,35 +41,28 @@ async function generate(generator:any,messages:ChatMessage[],max_new_tokens=24){
   return assistantText(result,prompt);
 }
 
-async function verifyModel(model:string,dtype:string){
-  console.log(`Loading ${model} through Transformers.js...`);
-  const generator=await pipeline('text-generation',model,{dtype} as any);
+async function main(){
+  console.log(`Loading production CPU/WASM fallback ${MODEL.name} (${MODEL.dtype}) through Transformers.js...`);
+  const generator=await pipeline('text-generation',MODEL.name,{dtype:MODEL.dtype} as any);
 
-  const basicMessages:ChatMessage[]=[
+  const basicText=await generate(generator,[
     {role:'system',content:'You are a concise helpful chat assistant.'},
     {role:'user',content:'What is 2 + 2? Reply with just the number.'}
-  ];
-  const basicText=await generate(generator,basicMessages);
-  console.log(`${model} basic inference:`,JSON.stringify(basicText));
-  assert.ok(basicText.length>0,`${model} returned empty text`);
-  assert.match(basicText,/4/,`${model} failed basic conversational inference`);
+  ]);
+  console.log('basic inference:',JSON.stringify(basicText));
+  assert.ok(basicText.length>0,'fallback model returned empty text');
+  assert.match(basicText,/4/,'fallback model failed basic conversational inference');
 
-  const contextualMessages:ChatMessage[]=[
+  const contextualText=await generate(generator,[
     {role:'system',content:'You are a concise helpful chat assistant. Use conversation history.'},
     {role:'user',content:'Remember this for our conversation: the code word is mango.'},
     {role:'assistant',content:'Got it. The code word is mango.'},
     {role:'user',content:'What is the code word? Reply with just the word.'}
-  ];
-  const contextualText=await generate(generator,contextualMessages);
-  console.log(`${model} history inference:`,JSON.stringify(contextualText));
-  assert.match(contextualText,/mango/i,`${model} failed conversational history test`);
-  return {model,basic:basicText,context:contextualText};
-}
+  ]);
+  console.log('history inference:',JSON.stringify(contextualText));
+  assert.match(contextualText,/mango/i,'fallback model failed conversational history test');
 
-async function main(){
-  const results=[];
-  for(const model of MODELS)results.push(await verifyModel(model.name,model.dtype));
-  console.log(JSON.stringify({ok:true,results}));
+  console.log(JSON.stringify({ok:true,model:MODEL.name,dtype:MODEL.dtype,basic:basicText,context:contextualText}));
 }
 
 main().catch(error=>{console.error(error);process.exitCode=1});
