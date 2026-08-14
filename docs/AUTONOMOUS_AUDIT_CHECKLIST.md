@@ -52,6 +52,8 @@ This file is the persistent audit ledger for confirmed findings, verified fixes,
 - [ ] Test duplicate notification generation, concurrent mark-read, stale badge counts, and href validation end-to-end.
 
 ## Search
+- [x] Fixed the global command-palette RPC call to use the deployed `global_search(search_text, result_limit)` parameter names; the old `{q: ...}` payload could not resolve the PostgREST function overload and silently produced no internal results.
+- [x] Added a source-contract regression test that rejects the obsolete `{q: query}` RPC shape and requires `search_text`/`result_limit`.
 - [ ] Test query escaping, large result sets, location isolation, stale/deleted result suppression, and search consistency across files/tasks/knowledge/ops records.
 
 ## Files / backups / restores
@@ -77,15 +79,15 @@ This file is the persistent audit ledger for confirmed findings, verified fixes,
 - [x] Added a PWA service-worker contract test covering cached fallback on non-2xx static responses and fail-closed offline document navigation.
 - [x] Added targeted backup-integrity contracts for exporter-reported table failures, malformed export-status metadata, and valid complete exports.
 - [x] Added a DST-specific recurrence regression contract using `America/New_York`.
-- [ ] Current DST-fix CI run is still in progress; dependency installation passed and typecheck is running, with production build queued behind it.
+- [ ] Current global-search contract CI run is in progress; the fix is committed and the workflow has started.
 - [ ] Add database/RLS contract tests to CI where a disposable Supabase test environment can be safely provisioned.
 
 ## Deployment boundaries
-- [x] This audit pass made no manual Vercel deployment; GitHub/CI validation was preferred for the code-only recurrence fix.
+- [x] This audit pass made no manual Vercel deployment; GitHub/CI validation was preferred for the code-only search fix.
 - [ ] Verify environment-variable parity across Production/Preview/Development when AI provider credentials are introduced.
 
 ## Latest meaningful findings
-1. Weekly `BYDAY` recurrence interval parity was derived from raw millisecond distance between local-midnight dates divided by `7*86400000`. Across DST, a calendar week can be 167 or 169 elapsed hours, so `Math.floor` could classify a week one interval early/late and make an every-2-weeks event appear on the wrong week.
-2. Weekly interval calculation now uses UTC-normalized calendar-day ordinals based only on the local year/month/day, preserving calendar-week parity independently of DST offset changes.
-3. A targeted America/New_York spring-forward regression test now locks the intended behavior: a 09:00 biweekly Monday event remains on March 9 and March 23, 2026 at 09:00 local time.
+1. The deployed Supabase function is `global_search(search_text text, result_limit integer default 30)`, but the command palette called it as `supabase.rpc('global_search', { q: query })`. PostgREST resolves RPCs by named arguments, so the mismatch caused the internal search request to fail while the UI swallowed the error and displayed no database results.
+2. The command palette now calls `global_search` with `{search_text: query, result_limit: 20}` and retains the existing request-sequence race guard, dedupe, location-scoped database function, and bounded result handling.
+3. A targeted source-contract test now prevents the obsolete `{q: query}` payload from returning.
 4. Existing unresolved blockers remain unchanged: production AI still lacks a real provider credential, authenticated cross-role mutation tests still need a safe disposable role fixture, and Supabase leaked-password protection still requires Auth configuration access.
