@@ -1,0 +1,79 @@
+name: One-time finalize restaurant ops suite
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Patch navigation and reliability fixes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          p=Path('app/page.tsx')
+          s=p.read_text()
+          if 'href="/logbook"' not in s:
+              marker='<a className="settings-row" href="/menu">'
+              links='''<a className="settings-row" href="/logbook"><span className="settings-icon"><History/></span><span><b>Manager Logbook</b><small>MOD handoffs, guest issues, 86s and follow-ups</small></span><ChevronRight/></a><a className="settings-row" href="/schedule"><span className="settings-icon"><Users/></span><span><b>Schedule</b><small>Shifts, time off, call-outs and coverage</small></span><ChevronRight/></a><a className="settings-row" href="/inventory"><span className="settings-icon"><FileText/></span><span><b>Inventory & Food Cost</b><small>Counts, pars, ordering, waste and recipe cost</small></span><ChevronRight/></a><a className="settings-row" href="/safety"><span className="settings-icon"><ShieldCheck/></span><span><b>Food Safety</b><small>Opening/closing checks, temperatures and corrective actions</small></span><ChevronRight/></a><a className="settings-row" href="/maintenance"><span className="settings-icon"><Settings/></span><span><b>Maintenance</b><small>Equipment, repair tickets and service history</small></span><ChevronRight/></a><a className="settings-row" href="/training"><span className="settings-icon"><Users/></span><span><b>Training & Certifications</b><small>Assignments, expirations and manager coaching</small></span><ChevronRight/></a><a className="settings-row" href="/incidents"><span className="settings-icon"><ShieldCheck/></span><span><b>Incident Reporting</b><small>Private safety, injury, conduct and property reports</small></span><ChevronRight/></a><a className="settings-row" href="/vendors"><span className="settings-icon"><FolderOpen/></span><span><b>Vendors</b><small>Contacts, accounts, orders and service history</small></span><ChevronRight/></a>'''
+              if marker not in s: raise SystemExit('menu navigation marker missing')
+              s=s.replace(marker,links+marker,1)
+              p.write_text(s)
+
+          p=Path('app/training/page.tsx')
+          s=p.read_text()
+          old="coaching=useMemo(()=>rows.filter(r=>r.kind==='system_note'&&Array.isArray(r.data?.tags)?r.data.tags.includes('accountability'):r.data?.category==='accountability'),[rows])"
+          new="coaching=useMemo(()=>rows.filter(r=>r.kind==='system_note'&&(Array.isArray(r.data?.tags)?r.data.tags.includes('accountability'):r.data?.category==='accountability')),[rows])"
+          if old in s:s=s.replace(old,new,1)
+          p.write_text(s)
+
+          p=Path('app/maintenance/page.tsx')
+          s=p.read_text()
+          pattern=r"async function resolveTicket\(id:string\)\{.*?finally\{setBusy\(false\)\}\}"
+          repl="""async function resolveTicket(id:string){if(!canManage||busy)return;const current=tickets.find(t=>t.id===id);if(!current)return;const resolution=prompt('Resolution / repair note')||'';setBusy(true);try{const {data:u}=await supabase.auth.getUser();const {error}=await supabase.from('ops_records').update({status:'resolved',archived_at:new Date().toISOString(),updated_by:u.user?.id||null,data:{...current.data,resolution:resolution.trim().slice(0,3000),resolved_at:new Date().toISOString()}}).eq('id',id).eq('kind','maintenance_ticket');if(error)throw error;await load();setMessage('Maintenance ticket resolved.');}catch{setMessage('Could not resolve ticket.');}finally{setBusy(false)}}"""
+          s,n=re.subn(pattern,repl,s,count=1,flags=re.S)
+          if n!=1: raise SystemExit('maintenance resolution marker missing')
+          p.write_text(s)
+
+          p=Path('app/schedule/page.tsx')
+          s=p.read_text()
+          pattern=r"async function reviewChange\(req:ChangeReq,status:'approved'\|'denied'\)\{.*?finally\{setBusy\(false\)\}\}"
+          repl="""async function reviewChange(req:ChangeReq,status:'approved'|'denied'){if(!canManage||busy)return;setBusy(true);try{const {data,error}=await supabase.rpc('review_shift_change_request',{p_request_id:req.id,p_decision:status});if(error)throw error;if(!data)throw new Error('request no longer pending');await load();setMessage(`Shift request ${status}.`);}catch{setMessage('Could not review that shift request.');}finally{setBusy(false)}}"""
+          s,n=re.subn(pattern,repl,s,count=1,flags=re.S)
+          if n!=1: raise SystemExit('schedule review marker missing')
+          p.write_text(s)
+          PY
+      - name: Install dependencies
+        run: |
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          npm ci --ignore-scripts --no-audit --no-fund
+      - name: Full tests
+        run: npm test
+      - name: Type check
+        run: npx tsc --noEmit
+      - name: Production build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: test-public-key
+        run: npm run build
+      - name: Commit verified suite and self-remove
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -f .github/workflows/one-time-finalize-restaurant-ops.yml
+          git add app/page.tsx app/training/page.tsx app/maintenance/page.tsx app/schedule/page.tsx
+          git commit -m "Finalize internal restaurant operations suite"
+          git push
