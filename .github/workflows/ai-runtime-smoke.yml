@@ -9,6 +9,7 @@ on:
       - 'scripts/browser-ai-runtime.spec.ts'
       - 'app/ai-runtime-test/**'
       - 'lib/local-ai*.ts'
+      - 'tests/local-ai-fallback.test.ts'
       - 'package.json'
 
 permissions:
