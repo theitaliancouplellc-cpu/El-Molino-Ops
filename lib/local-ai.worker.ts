@@ -6,9 +6,11 @@ import type { LocalAIMessage } from './local-ai-prompt';
 type InMessage={id:string;messages:LocalAIMessage[]};
 type OutMessage={id:string;ok:boolean;text?:string;model?:string;device?:string;error?:string};
 
-const MODEL='onnx-community/Qwen2.5-0.5B-Instruct';
+const PRIMARY_MODEL='onnx-community/Qwen2.5-0.5B-Instruct';
+const FALLBACK_MODEL='HuggingFaceTB/SmolLM2-360M-Instruct';
 let generatorPromise:Promise<any>|null=null;
 let loadedDevice='';
+let loadedModel='';
 
 async function loadGenerator(){
   if(generatorPromise)return generatorPromise;
@@ -16,17 +18,17 @@ async function loadGenerator(){
     const canWebGPU=typeof navigator!=='undefined'&&'gpu' in navigator;
     if(canWebGPU){
       try{
-        const generator=await pipeline('text-generation',MODEL,{device:'webgpu',dtype:'q4f16'} as any);
-        loadedDevice='webgpu-q4f16';
+        const generator=await pipeline('text-generation',PRIMARY_MODEL,{device:'webgpu',dtype:'q4f16'} as any);
+        loadedDevice='webgpu-q4f16';loadedModel=PRIMARY_MODEL;
         return generator;
       }catch(error){
         console.warn('LOCAL_AI_WEBGPU_INIT_FAILED',error instanceof Error?error.message:'unknown');
       }
     }
-    const generator=await pipeline('text-generation',MODEL,{dtype:'q8'} as any);
-    loadedDevice='wasm-q8';
+    const generator=await pipeline('text-generation',FALLBACK_MODEL,{dtype:'q8'} as any);
+    loadedDevice='wasm-q8';loadedModel=FALLBACK_MODEL;
     return generator;
-  })().catch(error=>{generatorPromise=null;throw error});
+  })().catch(error=>{generatorPromise=null;loadedDevice='';loadedModel='';throw error});
   return generatorPromise;
 }
 
@@ -54,7 +56,7 @@ self.onmessage=async(event:MessageEvent<InMessage>)=>{
     } as any);
     const text=assistantText(result);
     if(!text)throw new Error('Local model returned no text');
-    const out:OutMessage={id,ok:true,text,model:MODEL,device:loadedDevice};
+    const out:OutMessage={id,ok:true,text,model:loadedModel||PRIMARY_MODEL,device:loadedDevice};
     self.postMessage(out);
   }catch(error){
     const out:OutMessage={id,ok:false,error:error instanceof Error?error.message:'Local AI failed'};
