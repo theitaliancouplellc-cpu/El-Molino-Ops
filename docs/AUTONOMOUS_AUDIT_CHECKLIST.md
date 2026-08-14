@@ -54,6 +54,8 @@ This file is the persistent audit ledger for confirmed findings, verified fixes,
 - [ ] Test query escaping, large result sets, location isolation, stale/deleted result suppression, and search consistency across files/tasks/knowledge/ops records.
 
 ## Files / backups / restores
+- [x] Backup dry-run now rejects exports whose own `errors` array reports failed or safety-capped table exports, so a partial backup cannot be mistaken for a restorable complete backup.
+- [x] Backup dry-run rejects malformed export-status metadata instead of ignoring it.
 - [ ] Verify backup export contains every production domain and preserves enough metadata for deterministic restore.
 - [ ] Test restore idempotency, partial failure rollback, duplicate IDs, foreign-key ordering, and malformed archive handling using a staged non-production path.
 
@@ -72,13 +74,14 @@ This file is the persistent audit ledger for confirmed findings, verified fixes,
 ## CI / build
 - [x] Production build currently runs the automated test suite before Next.js build.
 - [x] Added a PWA service-worker contract test covering cached fallback on non-2xx static responses and fail-closed offline document navigation.
+- [x] Added targeted backup-integrity contracts for exporter-reported table failures, malformed export-status metadata, and valid complete exports.
 - [ ] Add database/RLS contract tests to CI where a disposable Supabase test environment can be safely provisioned.
 
 ## Deployment boundaries
-- [x] This audit pass made no Vercel deployment; database and GitHub/CI validation were preferred.
+- [x] This audit pass made no manual Vercel deployment; database and GitHub/CI validation were preferred.
 - [ ] Verify environment-variable parity across Production/Preview/Development when AI provider credentials are introduced.
 
 ## Latest meaningful findings
-1. `ops_records` had a remaining structural-integrity gap: its field guard protected non-manager ownership/assignment and managerial fields, but authenticated users could still attempt to rewrite the row UUID and creation timestamp; managers/admins bypassed the non-manager field list entirely. The trigger now rejects `id` and `created_at` changes before role bypass, while preserving intended editable record content and manager controls.
-2. The PWA service worker used network-first caching for `/_next/static/` assets but only consulted the cache when `fetch()` threw. A stale installed client could therefore receive a deployment-time 404/5xx for an old chunk even when that exact chunk was cached locally. `networkFirst` now uses the cached copy on non-2xx responses and a targeted contract test locks the behavior.
-3. Supabase security advisor remains clean except for the existing Auth-level leaked-password-protection warning. Performance advisor reports only unused-index informational notices; no indexes were removed because workload statistics are not mature enough to justify it.
+1. The browser backup exporter intentionally records failed table exports and 100,000-row safety-cap failures in the backup root `errors` array, but the restore dry-run validator did not inspect that field. A structurally valid but incomplete export could therefore pass validation. The validator now treats any exporter-reported error as blocking and also rejects malformed export-status metadata.
+2. Targeted tests now cover partial exports, malformed export status, and valid complete exports; CI is running typecheck/build verification for the change.
+3. Existing unresolved blockers remain unchanged: production AI still lacks a real provider credential, authenticated cross-role mutation tests still need a safe disposable role fixture, and Supabase leaked-password protection still requires Auth configuration access.
