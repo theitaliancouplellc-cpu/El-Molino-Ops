@@ -1,0 +1,27 @@
+name: AI Runtime Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/ai-runtime-smoke.yml'
+      - 'scripts/ai-runtime-smoke.ts'
+
+permissions:
+  contents: read
+
+jobs:
+  local-model-inference:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package.json
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Run actual Transformers.js inference
+        run: npx tsx scripts/ai-runtime-smoke.ts
