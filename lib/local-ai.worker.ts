@@ -12,6 +12,12 @@ let generatorPromise:Promise<any>|null=null;
 let loadedDevice='';
 let loadedModel='';
 
+async function loadFallback(){
+  const generator=await pipeline('text-generation',FALLBACK_MODEL,{dtype:'q8'} as any);
+  loadedDevice='wasm-q8';loadedModel=FALLBACK_MODEL;
+  return generator;
+}
+
 async function loadGenerator(){
   if(generatorPromise)return generatorPromise;
   generatorPromise=(async()=>{
@@ -25,10 +31,13 @@ async function loadGenerator(){
         console.warn('LOCAL_AI_WEBGPU_INIT_FAILED',error instanceof Error?error.message:'unknown');
       }
     }
-    const generator=await pipeline('text-generation',FALLBACK_MODEL,{dtype:'q8'} as any);
-    loadedDevice='wasm-q8';loadedModel=FALLBACK_MODEL;
-    return generator;
+    return loadFallback();
   })().catch(error=>{generatorPromise=null;loadedDevice='';loadedModel='';throw error});
+  return generatorPromise;
+}
+
+async function switchToFallback(){
+  generatorPromise=loadFallback().catch(error=>{generatorPromise=null;loadedDevice='';loadedModel='';throw error});
   return generatorPromise;
 }
 
@@ -42,20 +51,26 @@ function assistantText(result:any){
   return '';
 }
 
+const generationOptions={max_new_tokens:360,do_sample:true,temperature:0.55,top_p:0.9,repetition_penalty:1.08};
+async function generate(generator:any,messages:LocalAIMessage[]){
+  const result=await generator(messages,generationOptions as any);
+  const text=assistantText(result);
+  if(!text)throw new Error('Local model returned no text');
+  return text;
+}
+
 self.onmessage=async(event:MessageEvent<InMessage>)=>{
   const {id,messages}=event.data||{};
   if(!id||!Array.isArray(messages))return;
   try{
-    const generator=await loadGenerator();
-    const result=await generator(messages,{
-      max_new_tokens:360,
-      do_sample:true,
-      temperature:0.55,
-      top_p:0.9,
-      repetition_penalty:1.08,
-    } as any);
-    const text=assistantText(result);
-    if(!text)throw new Error('Local model returned no text');
+    let generator=await loadGenerator();
+    let text:string;
+    try{text=await generate(generator,messages)}catch(primaryError){
+      if(loadedModel!==PRIMARY_MODEL)throw primaryError;
+      console.warn('LOCAL_AI_WEBGPU_GENERATION_FAILED',primaryError instanceof Error?primaryError.message:'unknown');
+      generator=await switchToFallback();
+      text=await generate(generator,messages);
+    }
     const out:OutMessage={id,ok:true,text,model:loadedModel||PRIMARY_MODEL,device:loadedDevice};
     self.postMessage(out);
   }catch(error){
