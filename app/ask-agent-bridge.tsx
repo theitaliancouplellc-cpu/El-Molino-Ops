@@ -59,8 +59,9 @@ export default function AskAgentBridge(){
         const messages=buildLocalAIMessages({question,history:body.history,knowledge:body.knowledge,procedures:body.procedures});
         const local=await runLocalBrowserAI(messages);
         return jsonResponse({
+          ...(remotePayload&&typeof remotePayload==='object'?remotePayload:{}),
           answer:local.text,
-          citations:[],
+          citations:Array.isArray(remotePayload?.citations)?remotePayload.citations:[],
           local:true,
           degraded:false,
           ai:{provider:'On-device AI',model:local.model,device:local.device},
