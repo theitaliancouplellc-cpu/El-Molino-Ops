@@ -1,0 +1,27 @@
+name: One-time dependency security audit
+
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/one-time-dependency-audit.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: audit-finalize-20260814
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Audit full locked dependency graph
+        run: npm audit --audit-level=high
+      - name: Audit production locked dependency graph
+        run: npm audit --omit=dev --audit-level=high
