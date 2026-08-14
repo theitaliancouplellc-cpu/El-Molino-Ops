@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { buildLocalAIMessages, type LocalHistoryMessage } from '@/lib/local-ai-prompt';
 import { runLocalBrowserAI } from '@/lib/local-ai-client';
 import { beginPuterAuthFromUserGesture, preparePuterAI, runPuterBrowserAI } from '@/lib/puter-ai-client';
+import { getOpsAIKnowledge } from '@/lib/ops-ai-context';
 
 function visibleHistory():LocalHistoryMessage[]{
   if(typeof document==='undefined')return [];
@@ -47,13 +48,18 @@ export default function AskAgentBridge(){
       if(!question)return original(input,init);
 
       const puterAuthAttempt=beginPuterAuthFromUserGesture();
-
       const history=Array.isArray(body.history)?body.history:visibleHistory();
       if(history.at(-1)?.role==='user'&&String(history.at(-1)?.content||'').trim()===question)history.pop();
       body.history=history.slice(-20);
 
       const {data:{session}}=await supabase.auth.getSession();
       if(!session?.access_token)return original(input,{...init,body:JSON.stringify(body)});
+
+      try{
+        const liveOps=await getOpsAIKnowledge();
+        const supplied=Array.isArray(body.knowledge)?body.knowledge:[];
+        body.knowledge=[...supplied,...liveOps].slice(0,250);
+      }catch{}
 
       const headers=new Headers(init?.headers||{});
       headers.set('content-type','application/json');
