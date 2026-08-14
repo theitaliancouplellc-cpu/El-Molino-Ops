@@ -84,10 +84,13 @@ function assistantText(result:any,prompt=''){
   return '';
 }
 
-const generationOptions={max_new_tokens:160,do_sample:true,temperature:0.5,top_p:0.9,repetition_penalty:1.08,return_full_text:false};
+function generationOptions(){
+  const fallback=loadedModel===FALLBACK_MODEL;
+  return {max_new_tokens:fallback?72:160,do_sample:!fallback,temperature:0.5,top_p:0.9,repetition_penalty:1.08,return_full_text:false};
+}
 async function generate(generator:any,messages:LocalAIMessage[]){
   const prompt=await renderPrompt(generator,messages);
-  const result=await generator(prompt,generationOptions as any);
+  const result=await generator(prompt,generationOptions() as any);
   const text=assistantText(result,prompt);
   if(!text)throw new Error('Local model returned no text');
   return text;
