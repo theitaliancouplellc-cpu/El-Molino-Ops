@@ -11,6 +11,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@huggingface/transformers": "3.7.3",
     "@supabase/supabase-js": "2.112.3",
     "lucide-react": "0.468.0",
     "next": "15.5.23",
