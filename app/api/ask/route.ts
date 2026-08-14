@@ -20,7 +20,7 @@ const FREE_MODELS=['zai/glm-4.6v-flash','poolside/laguna-s-2.1-free','inclusiona
 
 function clean(v:unknown,max:number){return String(v??'').replace(/\0/g,'').slice(0,max)}
 function cleanTitle(v:unknown,max=200){return clean(v,max).replace(/\s+/g,' ').trim()}
-function plainAssistantText(v:unknown){return String(v??'').replace(/\*\*(.*?)\*\*/gs,'$1').replace(/__(.*?)__/gs,'$1').replace(/`([^`]+)`/g,'$1').replace(/^\s{0,3}#{1,6}\s+/gm,'').replace(/^\s*[-*+]\s+/gm,'').replace(/\[([^\]]+)\]\([^)]+\)/g,'$1').replace(/[ \t]+\n/g,'\n').replace(/\n{3,}/g,'\n\n').trim()}
+function plainAssistantText(v:unknown){return String(v??'').replace(/\*\*([\s\S]*?)\*\*/g,'$1').replace(/__([\s\S]*?)__/g,'$1').replace(/`([^`]+)`/g,'$1').replace(/^\s{0,3}#{1,6}\s+/gm,'').replace(/^\s*[-*+]\s+/gm,'').replace(/\[([^\]]+)\]\([^)]+\)/g,'$1').replace(/[ \t]+\n/g,'\n').replace(/\n{3,}/g,'\n\n').trim()}
 function allowed(userId:string){const now=Date.now();if(rate.size>500){for(const [id,b] of rate)if(b.reset<now)rate.delete(id);}const bucket=rate.get(userId);if(!bucket||bucket.reset<now){rate.set(userId,{count:1,reset:now+60_000});return true;}if(bucket.count>=30)return false;bucket.count+=1;return true;}
 function verifiedStatus(v:unknown){return ['approved','published','active'].includes(String(v||'').toLowerCase());}
 function termsFor(text:string){return [...new Set(text.toLowerCase().split(/[^a-z0-9]+/).filter(x=>x.length>2&&!STOP.has(x)))].slice(0,30);}
