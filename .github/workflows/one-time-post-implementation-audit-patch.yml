@@ -1,0 +1,202 @@
+name: One-time post-implementation audit patch
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://asuvgjxdmxizbnjrccsz.supabase.co
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_gtR8VfsQ5n-FPPbypnYKTw_f2k3Xyrk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply audited source patches
+        shell: bash
+        run: |
+          cat > /tmp/patch.py <<'PY'
+          from pathlib import Path
+          import re
+
+          def replace(path, old, new, count=1):
+              p=Path(path); s=p.read_text()
+              found=s.count(old)
+              if found < count:
+                  raise SystemExit(f'{path}: expected at least {count} match(es), found {found}: {old[:100]!r}')
+              s=s.replace(old,new,count)
+              p.write_text(s)
+
+          def regex(path, pattern, replacement, count=1):
+              p=Path(path); s=p.read_text()
+              s2,n=re.subn(pattern,replacement,s,count=count,flags=re.S)
+              if n!=count:
+                  raise SystemExit(f'{path}: regex expected {count}, got {n}: {pattern[:100]!r}')
+              p.write_text(s2)
+
+          # Restaurant business dates must use the Johns Island timezone, not UTC.
+          for path, anchor in [
+              ('app/performance/page.tsx', "import styles from './performance.module.css';"),
+              ('app/inventory/page.tsx', "import styles from '../ops-tools.module.css';"),
+              ('app/safety/page.tsx', "import styles from '../ops-tools.module.css';"),
+              ('app/logbook/page.tsx', "import styles from '../ops-tools.module.css';"),
+              ('app/training/page.tsx', "import styles from '../ops-tools.module.css';"),
+              ('app/cash/page.tsx', "import styles from '../ops-tools.module.css';"),
+          ]:
+              replace(path, anchor, anchor+"\nimport { businessDateInZone } from '@/lib/intermediate-hardening';")
+              replace(path, "const today=()=>new Date().toISOString().slice(0,10);", "const today=()=>businessDateInZone();")
+
+          # Inventory: uncounted is unknown, never zero; order creation is transactional/idempotent in the DB.
+          replace('app/inventory/page.tsx',
+              "const suggested=useMemo(()=>items.map(i=>({item:i,qty:qtyMap.get(i.id)??0,suggested:Math.max(0,Number(i.par_level)-Number(qtyMap.get(i.id)??0))})).filter(x=>x.qty<=Number(x.item.reorder_level)&&x.suggested>0),[items,qtyMap]);",
+              "const suggested=useMemo(()=>items.filter(i=>qtyMap.has(i.id)).map(i=>({item:i,qty:qtyMap.get(i.id)!,suggested:Math.max(0,Number(i.par_level)-Number(qtyMap.get(i.id)!))})).filter(x=>x.qty<=Number(x.item.reorder_level)&&x.suggested>0),[items,qtyMap]);")
+          replace('app/inventory/page.tsx',
+              "const inventoryValue=useMemo(()=>items.reduce((n,i)=>n+(qtyMap.get(i.id)??0)*Number(i.unit_cost),0),[items,qtyMap]);",
+              "const inventoryValue=useMemo(()=>items.filter(i=>qtyMap.has(i.id)).reduce((n,i)=>n+qtyMap.get(i.id)!*Number(i.unit_cost),0),[items,qtyMap]);")
+          regex('app/inventory/page.tsx',
+              r"  async function createSuggestedOrders\(\)\{.*?\n  async function setOrderStatus",
+              "  async function createSuggestedOrders(){if(!profile?.location_id||!count||!suggested.length||busy)return;setBusy(true);try{const {data,error}=await supabase.rpc('create_suggested_purchase_orders',{p_count_id:count.id});if(error)throw error;const created=Number(data||0);await load();setMessage(created?`Created ${created} draft order${created===1?'':'s'}.`:'Draft orders already exist for this inventory count.');}catch{setMessage('Could not create draft orders. No partial order was saved.');}finally{setBusy(false)}}\n  async function setOrderStatus")
+          replace('app/inventory/page.tsx', 'label="Latest inventory value"', 'label="Latest counted inventory value"')
+          replace('app/inventory/page.tsx', 'label="Below reorder"', 'label="Below reorder (counted)"')
+
+          # Safety: manager-owned ranges plus atomic checklist template/start/toggle RPCs.
+          replace('app/safety/page.tsx',
+              "type TempLog={id:string;title:string;data:TempData;occurred_at:string|null;created_at:string;created_by:string|null};",
+              "type TempLog={id:string;title:string;data:TempData&{point_id?:string};occurred_at:string|null;created_at:string;created_by:string|null};\ntype TempPoint={id:string;label:string;min_f:number|null;max_f:number|null;active:boolean};")
+          replace('app/safety/page.tsx',
+              "[runItems,setRunItems]=useState<RunItem[]>([]),[temps,setTemps]=useState<TempLog[]>([]),[message,setMessage]=useState('');",
+              "[runItems,setRunItems]=useState<RunItem[]>([]),[temps,setTemps]=useState<TempLog[]>([]),[points,setPoints]=useState<TempPoint[]>([]),[message,setMessage]=useState('');")
+          replace('app/safety/page.tsx',
+              "const [templateForm,setTemplateForm]=useState({title:'',period:'opening',items:''}),[tempForm,setTempForm]=useState({equipment:'',temperature_f:'',min_f:'',max_f:'',corrective_action:''});",
+              "const [templateForm,setTemplateForm]=useState({title:'',period:'opening',items:''}),[pointForm,setPointForm]=useState({label:'',min_f:'',max_f:''}),[tempForm,setTempForm]=useState({point_id:'',temperature_f:'',corrective_action:''});")
+          replace('app/safety/page.tsx',
+              "const [e,t,ti,r,ri,tmp]=await Promise.all([",
+              "const [e,t,ti,r,ri,tp,tmp]=await Promise.all([")
+          replace('app/safety/page.tsx',
+              "    supabase.from('checklist_run_items').select('id,checklist_run_id,template_item_id,completed,completed_by,completed_at,note'),\n    supabase.from('ops_records')",
+              "    supabase.from('checklist_run_items').select('id,checklist_run_id,template_item_id,completed,completed_by,completed_at,note'),\n    supabase.from('food_safety_temperature_points').select('id,label,min_f,max_f,active').eq('location_id',locationId).eq('active',true).order('label'),\n    supabase.from('ops_records')")
+          replace('app/safety/page.tsx',
+              "setRunItems((ri.data??[]) as RunItem[]);setTemps((tmp.data??[]) as TempLog[]);if(e.error||t.error||ti.error||r.error||ri.error||tmp.error)",
+              "setRunItems((ri.data??[]) as RunItem[]);setPoints((tp.data??[]) as TempPoint[]);setTemps((tmp.data??[]) as TempLog[]);if(e.error||t.error||ti.error||r.error||ri.error||tp.error||tmp.error)")
+          regex('app/safety/page.tsx',
+              r"  async function createTemplate\(e:FormEvent\)\{.*?\n  async function startRun",
+              "  async function createTemplate(e:FormEvent){e.preventDefault();if(!canManage||!profile?.location_id||busy||!templateForm.title.trim())return;const labels=templateForm.items.split('\\n').map(x=>x.trim()).filter(Boolean).slice(0,100);if(!labels.length){setMessage('Add at least one checklist item.');return;}setBusy(true);try{const {error}=await supabase.rpc('create_checklist_template_with_items',{p_title:templateForm.title.trim().slice(0,200),p_period:templateForm.period,p_labels:labels});if(error)throw error;setTemplateForm({title:'',period:'opening',items:''});await load();setMessage('Checklist template created.');}catch{setMessage('Could not create checklist template. Nothing partial was saved.');}finally{setBusy(false)}}\n  async function startRun")
+          regex('app/safety/page.tsx',
+              r"  async function startRun\(template:Template\)\{.*?\n  async function toggleItem",
+              "  async function startRun(template:Template){if(!profile?.location_id||busy)return;const existing=runs.find(r=>r.checklist_template_id===template.id);if(existing){setMessage(existing.completed_at?'That checklist is already completed today.':'That checklist is already open today.');return;}setBusy(true);try{const {error}=await supabase.rpc('start_today_checklist',{p_template_id:template.id});if(error)throw error;await load();setMessage(`${template.title} started.`);}catch{setMessage('Could not start that checklist.');}finally{setBusy(false)}}\n  async function toggleItem")
+          regex('app/safety/page.tsx',
+              r"  async function toggleItem\(item:RunItem\)\{.*?\n  async function logTemp",
+              "  async function toggleItem(item:RunItem){if(busy)return;setBusy(true);try{const {error}=await supabase.rpc('set_checklist_item_completed',{p_item_id:item.id,p_completed:!item.completed});if(error)throw error;await load();}catch{setMessage('Could not update that checklist item.');}finally{setBusy(false)}}\n  async function addPoint(e:FormEvent){e.preventDefault();if(!canManage||!profile?.location_id||busy||!pointForm.label.trim())return;const min=pointForm.min_f===''?null:Number(pointForm.min_f),max=pointForm.max_f===''?null:Number(pointForm.max_f);if((min===null&&max===null)||(min!==null&&!Number.isFinite(min))||(max!==null&&!Number.isFinite(max))||(min!==null&&max!==null&&max<min)){setMessage('Set a valid minimum and/or maximum range.');return;}setBusy(true);try{const {data:u}=await supabase.auth.getUser();const {error}=await supabase.from('food_safety_temperature_points').insert({location_id:profile.location_id,label:pointForm.label.trim().slice(0,200),min_f:min,max_f:max,created_by:u.user?.id||null,updated_by:u.user?.id||null});if(error)throw error;setPointForm({label:'',min_f:'',max_f:''});await load();setMessage('Temperature point saved.');}catch{setMessage('Could not save temperature point.');}finally{setBusy(false)}}\n  async function logTemp")
+          regex('app/safety/page.tsx',
+              r"  async function logTemp\(e:FormEvent\)\{.*?\n  const templateName",
+              "  async function logTemp(e:FormEvent){e.preventDefault();if(!profile?.location_id||busy||!tempForm.point_id||tempForm.temperature_f==='')return;const point=points.find(p=>p.id===tempForm.point_id);if(!point){setMessage('Choose a configured temperature point.');return;}const temp=Number(tempForm.temperature_f),min=point.min_f===null?null:Number(point.min_f),max=point.max_f===null?null:Number(point.max_f);if(!Number.isFinite(temp)){setMessage('Enter a valid temperature.');return;}const inRange=(min===null||temp>=min)&&(max===null||temp<=max);if(!inRange&&!tempForm.corrective_action.trim()){setMessage('Add a corrective action for an out-of-range temperature.');return;}setBusy(true);try{const {data:u}=await supabase.auth.getUser();if(!u.user)return;const data={point_id:point.id,equipment:point.label,temperature_f:temp,min_f:min,max_f:max,in_range:inRange,corrective_action:tempForm.corrective_action.trim().slice(0,3000)};const {error}=await supabase.from('ops_records').insert({location_id:profile.location_id,kind:'temperature_log',title:`Temperature · ${point.label}`,status:inRange?'active':'attention',priority:inRange?'normal':'high',sensitivity:'team',data,tags:['food-safety','temperature'],occurred_at:new Date().toISOString(),created_by:u.user.id,updated_by:u.user.id});if(error)throw error;setTempForm({point_id:'',temperature_f:'',corrective_action:''});await load();setMessage(inRange?'Temperature logged.':'Out-of-range temperature and corrective action logged.');}catch{setMessage('Could not save temperature log.');}finally{setBusy(false)}}\n  const templateName")
+          regex('app/safety/page.tsx',
+              r"    <section className=\{styles.section\}><div className=\{styles.card\}><h2>Temperature check</h2>.*?</section>",
+              "    {canManage&&<section className={styles.section}><div className={styles.card}><h2>Temperature point setup</h2><p className={styles.muted}>Managers define the acceptable range once. Staff cannot change the range while taking a reading.</p><form onSubmit={addPoint}><div className={styles.formGrid}><Field label=\"Equipment / item\"><input maxLength={200} value={pointForm.label} onChange={e=>setPointForm({...pointForm,label:e.target.value})}/></Field><Field label=\"Minimum acceptable °F\"><input type=\"number\" step=\"0.1\" value={pointForm.min_f} onChange={e=>setPointForm({...pointForm,min_f:e.target.value})}/></Field><Field label=\"Maximum acceptable °F\"><input type=\"number\" step=\"0.1\" value={pointForm.max_f} onChange={e=>setPointForm({...pointForm,max_f:e.target.value})}/></Field></div><div className={styles.actions}><button className={styles.button} disabled={busy}>Save temperature point</button></div></form></div></section>}\n    <section className={styles.section}><div className={styles.card}><h2>Temperature check</h2><p className={styles.muted}>Select a manager-configured point. Out-of-range readings require a corrective action.</p><form onSubmit={logTemp}><div className={styles.formGrid}><Field label=\"Equipment / item\"><select value={tempForm.point_id} onChange={e=>setTempForm({...tempForm,point_id:e.target.value})}><option value=\"\">Choose configured point</option>{points.map(p=><option key={p.id} value={p.id}>{p.label} · {p.min_f??'—'} to {p.max_f??'—'} °F</option>)}</select></Field><Field label=\"Temperature °F\"><input type=\"number\" step=\"0.1\" value={tempForm.temperature_f} onChange={e=>setTempForm({...tempForm,temperature_f:e.target.value})}/></Field><Field label=\"Corrective action if out of range\" wide><textarea maxLength={3000} value={tempForm.corrective_action} onChange={e=>setTempForm({...tempForm,corrective_action:e.target.value})}/></Field></div><div className={styles.actions}><button className={styles.button} disabled={busy||!points.length}>Log temperature</button></div>{!points.length&&<div className={styles.empty}>A manager must create at least one temperature point before readings can be logged.</div>}</form></div></section>")
+
+          # Schedule: use calendar-day arithmetic/timezone date keys and block obviously invalid requests client-side too.
+          replace('app/schedule/page.tsx', "import styles from '../ops-tools.module.css';", "import styles from '../ops-tools.module.css';\nimport { businessDateInZone } from '@/lib/intermediate-hardening';")
+          replace('app/schedule/page.tsx', "const addDays=(d:Date,n:number)=>new Date(d.getTime()+n*86400000);", "const addDays=(d:Date,n:number)=>{const x=new Date(d);x.setDate(x.getDate()+n);return x};")
+          replace('app/schedule/page.tsx', "const ymd=(d:Date)=>d.toISOString().slice(0,10);", "const ymd=(d:Date)=>businessDateInZone(d);")
+          replace('app/schedule/page.tsx',
+              "if(!Number.isFinite(st.getTime())||!Number.isFinite(en.getTime())||en<=st){setMessage('Choose a valid shift start and end.');return;}setBusy(true);",
+              "if(!Number.isFinite(st.getTime())||!Number.isFinite(en.getTime())||en<=st){setMessage('Choose a valid shift start and end.');return;}const breakMinutes=Math.max(0,Number(shiftForm.break_minutes)||0);if(breakMinutes>(en.getTime()-st.getTime())/60000){setMessage('The unpaid break cannot be longer than the shift.');return;}setBusy(true);")
+          replace('app/schedule/page.tsx',
+              "async function requestTimeOff(e:FormEvent){e.preventDefault();if(!me||!profile?.location_id||busy)return;if(offForm.ends_on<offForm.starts_on){",
+              "async function requestTimeOff(e:FormEvent){e.preventDefault();if(!me||!profile?.location_id||busy)return;if(offForm.starts_on<businessDateInZone()){setMessage('Time off cannot start in the past.');return;}if(offForm.ends_on<offForm.starts_on){")
+          replace('app/schedule/page.tsx', 'label="Open shifts" value={String(shifts.filter(s=>s.status===\'open\').length)}', 'label="Open shifts" value={String(shifts.filter(s=>s.status===\'open\'&&new Date(s.ends_at)>new Date()).length)}')
+          replace('app/schedule/page.tsx', '<input type="date" value={offForm.starts_on}', '<input type="date" min={businessDateInZone()} value={offForm.starts_on}')
+          replace('app/schedule/page.tsx', '<input type="date" value={offForm.ends_on}', '<input type="date" min={offForm.starts_on||businessDateInZone()} value={offForm.ends_on}')
+
+          # Training: do not offer a duplicate active assignment.
+          replace('app/training/page.tsx',
+              "const mod=modules.find(m=>m.id===assignForm.module_id);if(!mod)return;setBusy(true);",
+              "const mod=modules.find(m=>m.id===assignForm.module_id);if(!mod)return;if(progress.some(r=>r.assigned_employee_id===assignForm.employee_id&&r.data?.module_id===mod.id&&r.status!=='completed')){setMessage('That employee already has this training assigned.');return;}setBusy(true);")
+
+          # Generic Operations Center: employee team records remain readable/creatable, but manager-level mutation controls do not masquerade as available.
+          replace('app/ops/page.tsx',
+              "<div className=\"row-actions\"><button className=\"mini-action\" disabled={busy} onClick={()=>beginEdit(row)}>Edit</button>{row.status!=='complete'&&<button className=\"mini-action\" disabled={busy} onClick={()=>setStatus(row,'complete')}>Complete</button>}<button className=\"mini-action\" disabled={busy} onClick={()=>archive(row)}>{row.archived_at?'Restore':'Archive'}</button>{canManage&&<button className=\"mini-action danger-action\" disabled={busy} onClick={()=>remove(row)}><Trash2/> Trash</button>}</div>",
+              "<div className=\"row-actions\">{canManage&&<><button className=\"mini-action\" disabled={busy} onClick={()=>beginEdit(row)}>Edit</button>{row.status!=='complete'&&<button className=\"mini-action\" disabled={busy} onClick={()=>setStatus(row,'complete')}>Complete</button>}<button className=\"mini-action\" disabled={busy} onClick={()=>archive(row)}>{row.archived_at?'Restore':'Archive'}</button><button className=\"mini-action danger-action\" disabled={busy} onClick={()=>remove(row)}><Trash2/> Trash</button></>}</div>")
+
+          # Generic equipment/service records include sensitive identifiers/costs; keep them manager-scoped consistently with the dedicated Maintenance screen.
+          replace('lib/ops-modules.ts', "{kind:'equipment',title:'Equipment Registry',description:'Restaurant equipment, serials, models and warranty data.',category:'Maintenance',sensitivity:'team'", "{kind:'equipment',title:'Equipment Registry',description:'Restaurant equipment, serials, models and warranty data.',category:'Maintenance',sensitivity:'manager'")
+          replace('lib/ops-modules.ts', "{kind:'equipment_service',title:'Service History',description:'Repairs and preventive maintenance tied to equipment.',category:'Maintenance',sensitivity:'team'", "{kind:'equipment_service',title:'Service History',description:'Repairs and preventive maintenance tied to equipment.',category:'Maintenance',sensitivity:'manager'")
+
+          # Production regression tests for the bugs discovered in this audit.
+          Path('tests/post-implementation-audit.test.ts').write_text(r'''import test from 'node:test';
+          import assert from 'node:assert/strict';
+          import fs from 'node:fs';
+          import {mapPerformanceCsv,parseBusinessDate} from '../lib/performance';
+          import {businessDateInZone} from '../lib/intermediate-hardening';
+
+          test('restaurant business date does not roll to UTC tomorrow during evening service',()=>{
+            assert.equal(businessDateInZone(new Date('2026-08-15T00:30:00.000Z')),'2026-08-14');
+          });
+          test('Toast compact business dates are accepted and impossible dates are rejected',()=>{
+            assert.equal(parseBusinessDate('20260814'),'2026-08-14');
+            assert.equal(parseBusinessDate('2026-02-30'),null);
+            assert.equal(parseBusinessDate('13/40/2026'),null);
+          });
+          test('duplicate business dates are excluded instead of silently overwritten',()=>{
+            const r=mapPerformanceCsv('Business Date,Net Sales,Labor Cost\n2026-08-14,1000,200\n2026-08-14,400,90\n');
+            assert.equal(r.records.length,0);
+            assert.match(r.warnings.join(' '),/duplicate business date/i);
+          });
+          test('refund-style magnitude columns preserve a negative export as a positive magnitude',()=>{
+            const r=mapPerformanceCsv('Business Date,Net Sales,Refunds\n2026-08-14,1000,-25\n');
+            assert.equal(r.records[0]?.refunds,25);
+          });
+          test('inventory reorder math never treats uncounted items as zero',()=>{
+            const src=fs.readFileSync('app/inventory/page.tsx','utf8');
+            assert.match(src,/items\.filter\(i=>qtyMap\.has\(i\.id\)\)/);
+            assert.match(src,/create_suggested_purchase_orders/);
+          });
+          test('temperature capture uses manager-configured points and atomic checklist RPCs',()=>{
+            const src=fs.readFileSync('app/safety/page.tsx','utf8');
+            assert.match(src,/food_safety_temperature_points/);
+            assert.match(src,/create_checklist_template_with_items/);
+            assert.match(src,/start_today_checklist/);
+            assert.match(src,/set_checklist_item_completed/);
+            assert.doesNotMatch(src,/Minimum acceptable °F.*tempForm\.min_f/s);
+          });
+          test('new restaurant modules use restaurant business dates instead of UTC date slicing',()=>{
+            for(const p of ['app/performance/page.tsx','app/inventory/page.tsx','app/safety/page.tsx','app/logbook/page.tsx','app/training/page.tsx','app/cash/page.tsx']){
+              const src=fs.readFileSync(p,'utf8');
+              assert.match(src,/businessDateInZone/);
+              assert.doesNotMatch(src,/const today=\(\)=>new Date\(\)\.toISOString\(\)\.slice\(0,10\)/);
+            }
+          });
+          test('generic employee operations UI does not advertise manager mutation controls',()=>{
+            const src=fs.readFileSync('app/ops/page.tsx','utf8');
+            assert.match(src,/<div className="row-actions">\{canManage&&<>/);
+          });
+          ''')
+          PY
+          python /tmp/patch.py
+      - name: Generate and commit reproducible npm lockfile
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Full tests
+        run: npm test
+      - name: Type check
+        run: npx tsc --noEmit
+      - name: Production build
+        run: npm run build
+      - name: Commit verified patches and self-remove
+        shell: bash
+        run: |
+          rm .github/workflows/one-time-post-implementation-audit-patch.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Patch post-implementation restaurant ops failures"
+          git push
