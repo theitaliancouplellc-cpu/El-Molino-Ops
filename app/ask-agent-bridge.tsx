@@ -18,6 +18,19 @@ function visibleHistory():LocalHistoryMessage[]{
   }).filter((m):m is LocalHistoryMessage=>Boolean(m)).slice(-20);
 }
 
+function plainAssistantText(value:unknown){
+  return String(value??'')
+    .replace(/\*\*(.*?)\*\*/gs,'$1')
+    .replace(/__(.*?)__/gs,'$1')
+    .replace(/`([^`]+)`/g,'$1')
+    .replace(/^\s{0,3}#{1,6}\s+/gm,'')
+    .replace(/^\s*[-*+]\s+/gm,'')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g,'$1')
+    .replace(/[ \t]+\n/g,'\n')
+    .replace(/\n{3,}/g,'\n\n')
+    .trim();
+}
+
 function jsonResponse(payload:unknown,status=200){return new Response(JSON.stringify(payload),{status,headers:{'content-type':'application/json','cache-control':'no-store'}})}
 function isAskPost(input:RequestInfo|URL,init?:RequestInit){const url=typeof input==='string'?input:input instanceof URL?input.toString():input.url;return url.endsWith('/api/ask')&&String(init?.method||'GET').toUpperCase()==='POST'&&typeof init?.body==='string'}
 
@@ -33,8 +46,6 @@ export default function AskAgentBridge(){
       const question=String(body?.question||'').trim();
       if(!question)return original(input,init);
 
-      // Start keyless hosted-browser authorization while we are still inside the user's send gesture.
-      // If it is unavailable or declined, the request continues and the on-device model remains the final fallback.
       const puterAuthAttempt=beginPuterAuthFromUserGesture();
 
       const history=Array.isArray(body.history)?body.history:visibleHistory();
@@ -57,7 +68,10 @@ export default function AskAgentBridge(){
         if(contentType.includes('application/json')){
           try{remotePayload=await remote.clone().json();}catch{}
         }
-        if(remote.ok&&remotePayload?.answer&&!remotePayload?.degraded)return remote;
+        if(remote.ok&&remotePayload?.answer&&!remotePayload?.degraded){
+          const normalized={...remotePayload,answer:plainAssistantText(remotePayload.answer)};
+          return jsonResponse(normalized,remote.status);
+        }
         if([401,413,429].includes(remote.status))return remote;
         if(remote.ok&&!remotePayload?.degraded)return remote;
       }catch{}
@@ -68,7 +82,7 @@ export default function AskAgentBridge(){
         const hosted=await runPuterBrowserAI(messages,puterAuthAttempt);
         return jsonResponse({
           ...(remotePayload&&typeof remotePayload==='object'?remotePayload:{}),
-          answer:hosted.text,
+          answer:plainAssistantText(hosted.text),
           citations:Array.isArray(remotePayload?.citations)?remotePayload.citations:[],
           local:false,
           degraded:false,
@@ -81,7 +95,7 @@ export default function AskAgentBridge(){
         const local=await runLocalBrowserAI(messages);
         return jsonResponse({
           ...(remotePayload&&typeof remotePayload==='object'?remotePayload:{}),
-          answer:local.text,
+          answer:plainAssistantText(local.text),
           citations:Array.isArray(remotePayload?.citations)?remotePayload.citations:[],
           local:true,
           degraded:false,
