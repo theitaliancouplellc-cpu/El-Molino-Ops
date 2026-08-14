@@ -4,7 +4,7 @@ const OFFLINE_HTML='<!doctype html><html lang="en"><head><meta name="viewport" c
 
 async function safePrime(){const cache=await caches.open(CACHE);await Promise.allSettled(STATIC.map(async path=>{try{const res=await fetch(path,{cache:'no-store'});if(res.ok)await cache.put(path,res.clone())}catch{}}))}
 async function purgeOld(){const keys=await caches.keys();await Promise.all(keys.filter(k=>k!==CACHE&&k.startsWith('el-molino-')).map(k=>caches.delete(k)))}
-async function networkFirst(req,cacheable=false){try{const res=await fetch(req,{cache:'no-store'});if(res.ok&&cacheable){const cache=await caches.open(CACHE);await cache.put(req,res.clone())}return res}catch{const hit=await caches.match(req);return hit||Response.error()}}
+async function networkFirst(req,cacheable=false){try{const res=await fetch(req,{cache:'no-store'});if(res.ok){if(cacheable){const cache=await caches.open(CACHE);await cache.put(req,res.clone())}return res}if(cacheable){const hit=await caches.match(req);if(hit)return hit}return res}catch{const hit=await caches.match(req);return hit||Response.error()}}
 
 self.addEventListener('install',event=>{event.waitUntil(safePrime().then(()=>self.skipWaiting()))});
 self.addEventListener('activate',event=>{event.waitUntil(purgeOld().then(()=>self.clients.claim()))});
