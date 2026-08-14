@@ -25,11 +25,12 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import textwrap
           src=Path('.github/workflows/one-time-post-implementation-audit-patch.yml').read_text()
           marker="cat > /tmp/patch.py <<'PY'\n"
           start=src.index(marker)+len(marker)
           end=src.index("\n          PY",start)
-          script=src[start:end]
+          script=textwrap.dedent(src[start:end])
           script=script.replace("re.subn(pattern,replacement,s,count=count,flags=re.S)","re.subn(pattern,lambda _m: replacement,s,count=count,flags=re.S)")
           Path('/tmp/patch.py').write_text(script)
           PY
