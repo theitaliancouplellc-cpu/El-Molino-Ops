@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs';
 
 const route=readFileSync(new URL('../app/api/ask/route.ts',import.meta.url),'utf8');
 const primary=readFileSync(new URL('../lib/primary-ai-agent.ts',import.meta.url),'utf8');
+const localPrompt=readFileSync(new URL('../lib/local-ai-prompt.ts',import.meta.url),'utf8');
+const bridge=readFileSync(new URL('../app/ask-agent-bridge.tsx',import.meta.url),'utf8');
 
 const naturalConversationSamples=[
   'hey good afternoon','good morning how are you','yo what is up','thanks man','okay got it','wait a second','never mind','what do you mean by that','can you go deeper','why','how so','give me an example','what about managers','and then what','say that another way','that is not what I meant','I am confused','can you explain it simpler','what are you thinking','help me think through this',
@@ -15,13 +17,13 @@ const operationalConversationSamples=[
   'what do we know about this vendor','do we have a procedure for this','what does the app say about training','where is that information stored','summarize the relevant knowledge','do not show me raw records','just explain it normally','what source is that based on','is that verified internally','what do we not know yet','what should I verify','can you remember the context','continue from your last answer','compare that to the other option','what would happen next','can you draft the task','can you draft an SOP','save this as knowledge','do not create it yet','show me the draft first'
 ];
 
-const generalConversationSamples=[
-  'what is the difference between revenue and profit','explain compound interest simply','how do I write a professional email','what makes a good leader','help me organize my thoughts','what is a metaphor','give me a dinner idea','how can I improve my sleep schedule','explain this like I am new to it','what is the best way to learn something','help me make a pros and cons list','what questions should I ask','can you summarize what I just said','rewrite that more clearly','make that sound less formal','translate the idea into plain English','what assumptions are we making','challenge my plan','find the weak point in this idea','what is another way to approach it',
-  'I changed my mind','go back to the first option','what did you say earlier','why did you recommend that','what would change your answer','how confident are you','what information do you need','what can you infer from this','what can you not know from this','help me decide','give me three options','rank them','pick one and explain why','what is the tradeoff','make a step by step plan','what comes first','what comes after that','what if I only have an hour','simplify the plan','now make it more detailed'
+const outOfScopeSamples=[
+  'what is the capital of france','who won the game last night','what is bitcoin doing today','write me a poem about mars','explain quantum mechanics','what is the weather tomorrow','help me buy a gaming laptop','what movie should I watch','what are the best beaches in italy','teach me calculus','translate this unrelated paragraph','what is the latest political news','tell me about ancient rome','who is the president','what is the stock market doing','help me plan a vacation','what is the best anime','tell me a random joke','what is a black hole','explain photosynthesis',
+  'what should I cook at home tonight','help me fix my car','what phone should I buy','search the web for sneakers','tell me celebrity news','what is the nfl schedule','how do I build a gaming pc','what happened in world news','help me study chemistry','what is the moon made of','recommend a tv show','what are lottery odds','how do mortgages work','what is the tallest mountain','tell me about dinosaurs','what is a good workout','how do I learn guitar','what are chess openings','explain cryptocurrency','what is the newest iphone'
 ];
 
 test('120 natural messages are delegated to the model rather than phrase handlers',()=>{
-  const samples=[...naturalConversationSamples,...operationalConversationSamples,...generalConversationSamples];
+  const samples=[...naturalConversationSamples,...operationalConversationSamples,...outOfScopeSamples];
   assert.equal(samples.length,120);
   assert.doesNotMatch(route,/basicConversationAnswer/);
   assert.doesNotMatch(route,/isCapabilityFollowup/);
@@ -37,7 +39,7 @@ test('Ask AI model-first source contracts preserve safety without scripted conve
     [/1_000_000/,'request body limit exists'],
     [/verifiedStatus/,'knowledge approval filter exists'],
     [/slice\(-30\)/,'conversation history is bounded and supplied'],
-    [/full conversational AI assistant/,'system prompt defines a conversational model'],
+    [/fully conversational AI assistant/,'system prompt defines a conversational model'],
     [/Every user message is part of one continuous conversation/,'conversation continuity is explicit'],
     [/rather than phrase matching/,'phrase matching is explicitly rejected'],
     [/Do not expose raw retrieval blocks/,'retrieval remains private context'],
@@ -47,6 +49,26 @@ test('Ask AI model-first source contracts preserve safety without scripted conve
   ];
   assert.equal(contracts.length,12);
   for(const [pattern,label] of contracts)assert.match(route,pattern,label);
+});
+
+test('Ask El Molino stays conversational but refuses unrelated general-purpose questions',()=>{
+  for(const source of [route,localPrompt]){
+    assert.match(source,/Your scope is El Molino only/);
+    assert.match(source,/Do not answer unrelated general-knowledge questions/);
+    assert.match(source,/focused on El Molino/);
+  }
+  assert.doesNotMatch(route,/You may answer general knowledge and everyday questions/);
+  assert.doesNotMatch(localPrompt,/You may discuss general knowledge/);
+});
+
+test('assistant output is plain text instead of raw markdown symbols',()=>{
+  assert.match(route,/Output plain text only/);
+  assert.match(route,/Do not use Markdown, asterisks, hashtags, backticks, bold markers or decorative symbols/);
+  assert.match(localPrompt,/Output plain text only/);
+  assert.match(bridge,/function plainAssistantText/);
+  assert.match(bridge,/answer:plainAssistantText\(hosted\.text\)/);
+  assert.match(bridge,/answer:plainAssistantText\(local\.text\)/);
+  assert.match(route,/answer:plainAssistantText\(result\.text\)/);
 });
 
 test('Ask AI uses only the configured zero-cost language-model lane',()=>{
