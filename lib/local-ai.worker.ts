@@ -41,9 +41,30 @@ async function switchToFallback(){
   return generatorPromise;
 }
 
-function assistantText(result:any){
+function plainTranscript(messages:LocalAIMessage[]){
+  return messages.map(message=>`${message.role==='system'?'System':message.role==='user'?'User':'Assistant'}: ${message.content}`).join('\n')+'\nAssistant:';
+}
+
+async function renderPrompt(generator:any,messages:LocalAIMessage[]){
+  const tokenizer=generator?.tokenizer;
+  if(tokenizer?.apply_chat_template){
+    try{
+      const rendered=await Promise.resolve(tokenizer.apply_chat_template(messages,{tokenize:false,add_generation_prompt:true} as any));
+      if(typeof rendered==='string'&&rendered.trim())return rendered;
+    }catch(error){
+      console.warn('LOCAL_AI_CHAT_TEMPLATE_FAILED',error instanceof Error?error.message:'unknown');
+    }
+  }
+  return plainTranscript(messages);
+}
+
+function assistantText(result:any,prompt=''){
   const generated=result?.[0]?.generated_text;
-  if(typeof generated==='string')return generated.trim();
+  if(typeof generated==='string'){
+    const text=generated.trim();
+    if(prompt&&text.startsWith(prompt.trim()))return text.slice(prompt.trim().length).trim();
+    return text;
+  }
   if(Array.isArray(generated)){
     const last=[...generated].reverse().find((m:any)=>m?.role==='assistant'&&typeof m?.content==='string');
     return String(last?.content||'').trim();
@@ -51,10 +72,11 @@ function assistantText(result:any){
   return '';
 }
 
-const generationOptions={max_new_tokens:360,do_sample:true,temperature:0.55,top_p:0.9,repetition_penalty:1.08};
+const generationOptions={max_new_tokens:360,do_sample:true,temperature:0.55,top_p:0.9,repetition_penalty:1.08,return_full_text:false};
 async function generate(generator:any,messages:LocalAIMessage[]){
-  const result=await generator(messages,generationOptions as any);
-  const text=assistantText(result);
+  const prompt=await renderPrompt(generator,messages);
+  const result=await generator(prompt,generationOptions as any);
+  const text=assistantText(result,prompt);
   if(!text)throw new Error('Local model returned no text');
   return text;
 }
