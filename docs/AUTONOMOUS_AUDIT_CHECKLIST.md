@@ -9,8 +9,10 @@ This file is the persistent audit ledger for confirmed findings, verified fixes,
 - [ ] Verify service-worker update behavior across two real sequential builds on an installed iPhone PWA.
 
 ## AI conversation / routing
-- [ ] Production inference remains blocked until a real provider credential is installed. Direct Groq support exists in code, but production must report `groq: true` before Ask AI is considered healthy.
-- [ ] After provider activation, run end-to-end conversational tests with multi-turn context, slang, corrections, topic changes, restaurant-specific retrieval, and write-action confirmation.
+- [ ] Production hosted inference remains blocked until a real Cloudflare or Groq provider credential is installed. Cloudflare Workers AI and Groq support both exist in code; Vercel AI Gateway remains an optional final lane and must not be reported enabled unless actually configured.
+- [x] Direct Transformers.js inference now passes for both the Qwen2.5 primary local model and SmolLM2 emergency fallback, including arithmetic and multi-turn history recall using each model's tokenizer chat template.
+- [ ] Real browser-worker inference is still being exercised by the dedicated AI Runtime Smoke workflow and is not considered verified until that job finishes successfully.
+- [ ] After hosted provider activation, run end-to-end conversational tests with multi-turn context, slang, corrections, topic changes, restaurant-specific retrieval, and write-action confirmation.
 - [ ] Verify provider failure/fallback behavior with real 401/403/429/5xx responses without exposing provider internals to users.
 
 ## Supabase / RLS / security
@@ -21,6 +23,8 @@ This file is the persistent audit ledger for confirmed findings, verified fixes,
 - [x] Fixed discussion-message UPDATE source-location isolation for managers/authors.
 - [x] Hardened file identity and storage metadata against UPDATE tampering (`id`, location, uploader, physical storage reference, original filename/type/size/kind, created_at).
 - [x] Hardened `ops_records` row identity so authenticated users, including managers/admins, cannot rewrite `id` or `created_at`; the existing non-manager field guard remains intact for location/kind/sensitivity/priority/assignment/ownership/archive/delete fields.
+- [x] Re-verified that every public application table has RLS enabled and at least one policy; no public/storage policy uses unconditional `USING (true)` or `WITH CHECK (true)`.
+- [x] Re-verified SECURITY DEFINER functions are executable only by postgres/service_role, not authenticated or anon clients.
 - [ ] Add authenticated-role contract tests for cross-location reads/writes and field-level mutation guards. Current production data has no employee profile/ops record pair suitable for a non-destructive role-mutation replay.
 - [ ] Supabase Auth leaked-password protection is disabled; requires Auth configuration, not a normal SQL migration.
 
@@ -28,6 +32,7 @@ This file is the persistent audit ledger for confirmed findings, verified fixes,
 - [x] Storage object insert paths are constrained to current location + authenticated user folder.
 - [x] Storage read requires a matching accessible `files` row.
 - [x] File database rows can no longer be repointed to a different bucket/path or falsified physical-file identity via UPDATE.
+- [x] Re-verified the `el-molino-files` bucket is private, capped at 50 MB per object, and restricted to the approved MIME allowlist.
 - [ ] Test orphan cleanup/rollback when object upload succeeds but metadata/link creation fails.
 - [ ] Test signed URL expiration, deleted file recovery, and cross-location attachment access end-to-end.
 
@@ -68,6 +73,7 @@ This file is the persistent audit ledger for confirmed findings, verified fixes,
 ## Performance
 - [x] Removed the Supabase `auth_rls_initplan` warning from `discussion_messages_author_update` by evaluating `auth.uid()` through a scalar subquery once per statement while preserving the same authorization semantics.
 - [x] Re-ran security and performance advisors after the `ops_records` identity migration; no new security/RLS warning was introduced and the performance advisor still reports only young-database unused-index informational notices.
+- [x] Re-ran both advisors in the current audit: security still reports only leaked-password protection disabled, and performance still reports only young-database unused-index informational notices.
 - [ ] Do not remove currently unused indexes solely from young-database statistics; wait for representative workload data.
 - [ ] Measure high-cardinality files/tasks/ops screens and API request sizes before optimizing.
 
@@ -79,15 +85,17 @@ This file is the persistent audit ledger for confirmed findings, verified fixes,
 - [x] Added a PWA service-worker contract test covering cached fallback on non-2xx static responses and fail-closed offline document navigation.
 - [x] Added targeted backup-integrity contracts for exporter-reported table failures, malformed export-status metadata, and valid complete exports.
 - [x] Added a DST-specific recurrence regression contract using `America/New_York`.
-- [ ] Current global-search contract CI run is in progress; the fix is committed and the workflow has started.
+- [x] Direct local-model inference job passes for Qwen2.5 and SmolLM2 with explicit tokenizer chat templates.
+- [ ] Current full browser-worker inference job is still in progress; do not mark the browser runtime healthy until it succeeds.
 - [ ] Add database/RLS contract tests to CI where a disposable Supabase test environment can be safely provisioned.
 
 ## Deployment boundaries
-- [x] This audit pass made no manual Vercel deployment; GitHub/CI validation was preferred for the code-only search fix.
+- [x] This audit pass made no manual Vercel deployment; GitHub/CI and Supabase validation were preferred.
 - [ ] Verify environment-variable parity across Production/Preview/Development when AI provider credentials are introduced.
 
 ## Latest meaningful findings
-1. The deployed Supabase function is `global_search(search_text text, result_limit integer default 30)`, but the command palette called it as `supabase.rpc('global_search', { q: query })`. PostgREST resolves RPCs by named arguments, so the mismatch caused the internal search request to fail while the UI swallowed the error and displayed no database results.
-2. The command palette now calls `global_search` with `{search_text: query, result_limit: 20}` and retains the existing request-sequence race guard, dedupe, location-scoped database function, and bounded result handling.
-3. A targeted source-contract test now prevents the obsolete `{q: query}` payload from returning.
-4. Existing unresolved blockers remain unchanged: production AI still lacks a real provider credential, authenticated cross-role mutation tests still need a safe disposable role fixture, and Supabase leaked-password protection still requires Auth configuration access.
+1. Local AI had a real prompt-contract defect: passing chat-message arrays directly to the Qwen2.5 text-generation pipeline could produce unrelated text instead of following the user instruction. Rendering messages with the model tokenizer's chat template fixed the failure; direct inference now returns `4` for the arithmetic probe and remembers `mango` across conversation history for Qwen2.5, while SmolLM2 also passes both checks.
+2. The hosted router now contains a Cloudflare Workers AI lane ahead of Groq and the Vercel gateway, and provider-health reporting now reflects only providers that are actually configured. Hosted inference is still unresolved because Cloudflare/Groq credentials are not installed.
+3. Supabase was re-audited directly: all public app tables have RLS enabled, no unconditional allow policies were found, SECURITY DEFINER execution is limited to postgres/service_role, and the storage bucket remains private with a 50 MB cap and MIME allowlist.
+4. Supabase's only current security-advisor warning is leaked-password protection being disabled. This cannot be fixed safely through SQL; it requires Auth configuration access.
+5. The performance advisor's unused-index notices are not being treated as confirmed defects because the database is only days old and has not accumulated representative workload statistics.
