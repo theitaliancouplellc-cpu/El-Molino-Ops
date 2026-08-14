@@ -32,6 +32,7 @@ jobs:
           end=src.index("\n          PY",start)
           script=textwrap.dedent(src[start:end])
           script=script.replace("re.subn(pattern,replacement,s,count=count,flags=re.S)","re.subn(pattern,lambda _m: replacement,s,count=count,flags=re.S)")
+          script=script.replace("/Minimum acceptable °F.*tempForm\\.min_f/s","/Minimum acceptable °F[\\s\\S]*tempForm\\.min_f/")
           Path('/tmp/patch.py').write_text(script)
           PY
           python /tmp/patch.py
