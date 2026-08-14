@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { buildLocalAIMessages, type LocalHistoryMessage } from '@/lib/local-ai-prompt';
 import { runLocalBrowserAI } from '@/lib/local-ai-client';
+import { beginPuterAuthFromUserGesture, preparePuterAI, runPuterBrowserAI } from '@/lib/puter-ai-client';
 
 function visibleHistory():LocalHistoryMessage[]{
   if(typeof document==='undefined')return [];
@@ -23,12 +24,18 @@ function isAskPost(input:RequestInfo|URL,init?:RequestInit){const url=typeof inp
 export default function AskAgentBridge(){
   useEffect(()=>{
     const original=window.fetch.bind(window);
+    void preparePuterAI().catch(()=>{});
+
     const wrapped=async(input:RequestInfo|URL,init?:RequestInit)=>{
       if(!isAskPost(input,init))return original(input,init);
       let body:any;
       try{body=JSON.parse(String(init?.body||'{}'));}catch{return original(input,init)}
       const question=String(body?.question||'').trim();
       if(!question)return original(input,init);
+
+      // Start keyless hosted-browser authorization while we are still inside the user's send gesture.
+      // If it is unavailable or declined, the request continues and the on-device model remains the final fallback.
+      const puterAuthAttempt=beginPuterAuthFromUserGesture();
 
       const history=Array.isArray(body.history)?body.history:visibleHistory();
       if(history.at(-1)?.role==='user'&&String(history.at(-1)?.content||'').trim()===question)history.pop();
@@ -55,8 +62,22 @@ export default function AskAgentBridge(){
         if(remote.ok&&!remotePayload?.degraded)return remote;
       }catch{}
 
+      const messages=buildLocalAIMessages({question,history:body.history,knowledge:body.knowledge,procedures:body.procedures});
+
       try{
-        const messages=buildLocalAIMessages({question,history:body.history,knowledge:body.knowledge,procedures:body.procedures});
+        const hosted=await runPuterBrowserAI(messages,puterAuthAttempt);
+        return jsonResponse({
+          ...(remotePayload&&typeof remotePayload==='object'?remotePayload:{}),
+          answer:hosted.text,
+          citations:Array.isArray(remotePayload?.citations)?remotePayload.citations:[],
+          local:false,
+          degraded:false,
+          ai:{provider:hosted.provider,model:hosted.model},
+          source:hosted.provider
+        });
+      }catch{}
+
+      try{
         const local=await runLocalBrowserAI(messages);
         return jsonResponse({
           ...(remotePayload&&typeof remotePayload==='object'?remotePayload:{}),
