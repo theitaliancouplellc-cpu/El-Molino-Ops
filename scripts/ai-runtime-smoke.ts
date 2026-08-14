@@ -3,7 +3,7 @@ import { pipeline } from '@huggingface/transformers';
 
 type ChatMessage={role:'system'|'user'|'assistant';content:string};
 const MODELS=[
-  {name:'onnx-community/Qwen3-0.6B-Instruct-ONNX',dtype:'q8'},
+  {name:'onnx-community/Qwen2.5-0.5B-Instruct',dtype:'q8'},
   {name:'HuggingFaceTB/SmolLM2-360M-Instruct',dtype:'q8'},
 ] as const;
 
