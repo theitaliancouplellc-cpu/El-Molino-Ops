@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { averageCheck, laborPercent, mapPerformanceCsv, percentChange, salesPerLaborHour, type PerformancePatch } from '@/lib/performance';
 import styles from './performance.module.css';
+import { businessDateInZone } from '@/lib/intermediate-hardening';
 
 type Profile={app_role:'admin'|'manager'|'employee';location_id:string|null};
 type Row={id:string;business_date:string;source:string;gross_sales:number;net_sales:number;food_sales:number;alcohol_sales:number;discounts:number;comps:number;voids:number;refunds:number;guest_count:number;labor_hours:number;labor_cost:number;overtime_hours:number;overtime_cost:number;notes:string|null};
@@ -13,7 +14,7 @@ const zeroTargets:Targets={daily_sales_target:0,labor_pct_target:0,sales_per_lab
 const money=(n:number)=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}).format(Number(n)||0);
 const pct=(n:number)=>`${(Number(n)||0).toFixed(1)}%`;
 const num=(v:string)=>Math.max(0,Number(v)||0);
-const today=()=>new Date().toISOString().slice(0,10);
+const today=()=>businessDateInZone();
 
 export default function PerformancePage(){
   const [profile,setProfile]=useState<Profile|null>(null),[ready,setReady]=useState(false),[busy,setBusy]=useState(false),[message,setMessage]=useState('');
