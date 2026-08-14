@@ -6,6 +6,7 @@ const route=readFileSync(new URL('../app/api/ask/route.ts',import.meta.url),'utf
 const primary=readFileSync(new URL('../lib/primary-ai-agent.ts',import.meta.url),'utf8');
 const localPrompt=readFileSync(new URL('../lib/local-ai-prompt.ts',import.meta.url),'utf8');
 const bridge=readFileSync(new URL('../app/ask-agent-bridge.tsx',import.meta.url),'utf8');
+const weather=readFileSync(new URL('../lib/live-weather.ts',import.meta.url),'utf8');
 
 const naturalConversationSamples=[
   'hey good afternoon','good morning how are you','yo what is up','thanks man','okay got it','wait a second','never mind','what do you mean by that','can you go deeper','why','how so','give me an example','what about managers','and then what','say that another way','that is not what I meant','I am confused','can you explain it simpler','what are you thinking','help me think through this',
@@ -18,7 +19,7 @@ const operationalConversationSamples=[
 ];
 
 const outOfScopeSamples=[
-  'what is the capital of france','who won the game last night','what is bitcoin doing today','write me a poem about mars','explain quantum mechanics','what is the weather tomorrow','help me buy a gaming laptop','what movie should I watch','what are the best beaches in italy','teach me calculus','translate this unrelated paragraph','what is the latest political news','tell me about ancient rome','who is the president','what is the stock market doing','help me plan a vacation','what is the best anime','tell me a random joke','what is a black hole','explain photosynthesis',
+  'what is the capital of france','who won the game last night','what is bitcoin doing today','write me a poem about mars','explain quantum mechanics','what is the weather tomorrow in tokyo','help me buy a gaming laptop','what movie should I watch','what are the best beaches in italy','teach me calculus','translate this unrelated paragraph','what is the latest political news','tell me about ancient rome','who is the president','what is the stock market doing','help me plan a vacation','what is the best anime','tell me a random joke','what is a black hole','explain photosynthesis',
   'what should I cook at home tonight','help me fix my car','what phone should I buy','search the web for sneakers','tell me celebrity news','what is the nfl schedule','how do I build a gaming pc','what happened in world news','help me study chemistry','what is the moon made of','recommend a tv show','what are lottery odds','how do mortgages work','what is the tallest mountain','tell me about dinosaurs','what is a good workout','how do I learn guitar','what are chess openings','explain cryptocurrency','what is the newest iphone'
 ];
 
@@ -59,6 +60,28 @@ test('Ask El Molino stays conversational but refuses unrelated general-purpose q
   }
   assert.doesNotMatch(route,/You may answer general knowledge and everyday questions/);
   assert.doesNotMatch(localPrompt,/You may discuss general knowledge/);
+});
+
+test('out-of-scope refusals stop after one short sentence',()=>{
+  for(const source of [route,localPrompt]){
+    assert.match(source,/one short sentence only/);
+    assert.match(source,/Stop after the refusal/);
+    assert.match(source,/Do not explain what information or access you lack/);
+  }
+});
+
+test('Johns Island weather is live operational context, not an out-of-scope question',()=>{
+  assert.match(route,/getJohnsIslandWeatherContext/);
+  assert.match(route,/needsLiveWeather\(retrievalQuery\)/);
+  assert.match(route,/PRIVATE LIVE JOHNS ISLAND WEATHER/);
+  assert.match(route,/Current Johns Island weather is in scope/);
+  assert.match(route,/do not ask the user to provide weather data/i);
+  assert.match(localPrompt,/Current Johns Island weather is in scope/);
+  assert.match(localPrompt,/answer weather questions directly/i);
+  assert.match(bridge,/liveContext:remotePayload\?\.liveContext/);
+  assert.match(weather,/api\.open-meteo\.com\/v1\/forecast/);
+  assert.match(weather,/temperature_unit:'fahrenheit'/);
+  assert.match(weather,/wind_speed_unit:'mph'/);
 });
 
 test('assistant output is plain text instead of raw markdown symbols',()=>{
