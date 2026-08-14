@@ -1,4 +1,4 @@
-import { runPrimaryAgent } from './primary-ai-agent';
+import { primaryAgentConfigured, runPrimaryAgent } from './primary-ai-agent';
 import { groqConfigured, runGroqAI } from './groq-ai';
 import { cloudflareConfigured, runCloudflareAI } from './cloudflare-ai';
 
@@ -55,7 +55,7 @@ export async function runLanePlan(lanes:AILane[],start=0):Promise<AIRouterResult
   return null;
 }
 
-export function configuredFreeProviders(){return {openrouter:false,gemini:false,groq:groqConfigured()&&groqFreeEnabled(),githubModels:false,cloudflare:cloudflareConfigured()&&cloudflareFreeEnabled(),vercelGateway:true};}
+export function configuredFreeProviders(){return {openrouter:false,gemini:false,groq:groqConfigured()&&groqFreeEnabled(),githubModels:false,cloudflare:cloudflareConfigured()&&cloudflareFreeEnabled(),vercelGateway:primaryAgentConfigured()};}
 
 export async function runFreeAI(messages:AIMessage[]):Promise<AIRouterResult|null>{
   if(cloudflareConfigured()&&cloudflareFreeEnabled()){
