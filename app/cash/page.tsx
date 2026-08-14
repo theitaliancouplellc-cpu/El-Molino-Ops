@@ -4,10 +4,11 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import styles from '../ops-tools.module.css';
+import { businessDateInZone } from '@/lib/intermediate-hardening';
 
 type Profile={app_role:'admin'|'manager'|'employee';location_id:string|null};
 type Session={id:string;business_date:string;shift:string;opening_cash:number;cash_sales:number;paid_outs:number;cash_refunds:number;expected_cash:number;actual_cash:number;deposit_amount:number;safe_count:number;petty_cash:number;notes:string|null;status:string;created_at:string};
-const today=()=>new Date().toISOString().slice(0,10);
+const today=()=>businessDateInZone();
 const money=(n:number)=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(Number(n)||0);
 const n=(v:string)=>Math.max(0,Number(v)||0);
 
