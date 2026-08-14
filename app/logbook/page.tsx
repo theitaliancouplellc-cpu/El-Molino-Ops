@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { laborPercent, salesPerLaborHour } from '@/lib/performance';
 import styles from '../ops-tools.module.css';
+import { businessDateInZone } from '@/lib/intermediate-hardening';
 
 type Profile={app_role:'admin'|'manager'|'employee';location_id:string|null};
 type Perf={business_date:string;net_sales:number;labor_cost:number;labor_hours:number;guest_count:number};
@@ -12,7 +13,7 @@ type Task={id:string;title:string;priority:string;status:string;due_at:string|nu
 type LogData={shift?:string;summary?:string;staffing?:string;guest_issues?:string;items_86?:string;maintenance?:string;safety?:string;wins?:string;follow_up?:string};
 type Log={id:string;title:string;status:string;priority:string;data:LogData;occurred_at:string|null;created_at:string};
 const money=(n:number)=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}).format(Number(n)||0);
-const today=()=>new Date().toISOString().slice(0,10);
+const today=()=>businessDateInZone();
 
 export default function LogbookPage(){
   const [ready,setReady]=useState(false),[busy,setBusy]=useState(false),[profile,setProfile]=useState<Profile|null>(null),[perf,setPerf]=useState<Perf|null>(null),[tasks,setTasks]=useState<Task[]>([]),[logs,setLogs]=useState<Log[]>([]),[message,setMessage]=useState('');
