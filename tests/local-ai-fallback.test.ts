@@ -62,16 +62,16 @@ test('Ask bridge authenticates hosted requests and falls back locally without re
   assert.match(bridge,/\.\.\.\(remotePayload&&typeof remotePayload==='object'\?remotePayload:\{\}\)/);
 });
 
-test('local worker uses compatible Qwen2.5 WebGPU primary and lightweight q4 WASM emergency model',()=>{
+test('local worker uses compatible Qwen2.5 WebGPU primary and verified 135M q4 WASM emergency model',()=>{
   const worker=readFileSync(new URL('../lib/local-ai.worker.ts',import.meta.url),'utf8');
   assert.match(worker,/Qwen2\.5-0\.5B-Instruct/);
-  assert.match(worker,/SmolLM2-360M-Instruct/);
+  assert.match(worker,/SmolLM2-135M-Instruct-ONNX-MHA/);
   assert.match(worker,/device:'webgpu'/);
   assert.match(worker,/dtype:'q4f16'/);
   assert.match(worker,/dtype:'q4'/);
   assert.match(worker,/wasm-q4/);
   assert.match(worker,/requestAdapter\(\)/);
-  assert.match(worker,/max_new_tokens:220/);
+  assert.match(worker,/max_new_tokens:160/);
   assert.match(worker,/LOCAL_AI_WEBGPU_GENERATION_FAILED/);
   assert.match(worker,/switchToFallback\(\)/);
 });
