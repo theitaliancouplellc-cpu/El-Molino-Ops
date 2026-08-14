@@ -7,7 +7,7 @@ type InMessage={id:string;messages:LocalAIMessage[]};
 type OutMessage={id:string;ok:boolean;text?:string;model?:string;device?:string;error?:string};
 
 const PRIMARY_MODEL='onnx-community/Qwen2.5-0.5B-Instruct';
-const FALLBACK_MODEL='HuggingFaceTB/SmolLM2-360M-Instruct';
+const FALLBACK_MODEL='onnx-community/SmolLM2-135M-Instruct-ONNX-MHA';
 let generatorPromise:Promise<any>|null=null;
 let loadedDevice='';
 let loadedModel='';
@@ -84,7 +84,7 @@ function assistantText(result:any,prompt=''){
   return '';
 }
 
-const generationOptions={max_new_tokens:220,do_sample:true,temperature:0.5,top_p:0.9,repetition_penalty:1.08,return_full_text:false};
+const generationOptions={max_new_tokens:160,do_sample:true,temperature:0.5,top_p:0.9,repetition_penalty:1.08,return_full_text:false};
 async function generate(generator:any,messages:LocalAIMessage[]){
   const prompt=await renderPrompt(generator,messages);
   const result=await generator(prompt,generationOptions as any);
