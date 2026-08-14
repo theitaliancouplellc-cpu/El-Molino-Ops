@@ -9,9 +9,10 @@ const primary=readFileSync(new URL('../lib/primary-ai-agent.ts',import.meta.url)
 test('keyless hosted browser AI loads Puter without embedding an API credential',()=>{
   assert.match(puter,/https:\/\/js\.puter\.com\/v2\//);
   assert.match(puter,/attempt_temp_user_creation:true/);
-  assert.match(puter,/gemini-3\.6-flash/);
+  assert.match(puter,/listModels/);
   assert.match(puter,/gpt-5\.4-nano/);
-  assert.match(puter,/qwen3\.6-flash/);
+  assert.match(puter,/cost\?\.input===0/);
+  assert.doesNotMatch(puter,/gemini-3\.6-flash|qwen3\.6-flash/);
   assert.doesNotMatch(puter,/API_KEY|api[_-]?key/i);
 });
 
