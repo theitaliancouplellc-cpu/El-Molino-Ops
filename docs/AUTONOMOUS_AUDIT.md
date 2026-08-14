@@ -18,6 +18,8 @@ This file tracks verified findings and unresolved audit work. Items are only mar
 - [x] Removed unnecessary `TRUNCATE`, `TRIGGER`, and `REFERENCES` privileges from `anon` and `authenticated` on public tables.
 - [x] Non-manager task updates are now restricted at the database trigger layer to completion-state fields; assignment, priority, recurrence, ownership, source and delete metadata cannot be rewritten by an assignee.
 - [x] Non-manager comment updates can no longer rewrite identity/ownership/entity fields.
+- [x] Notification content/recipient/location/link/data/creation metadata are immutable on user updates; only read state remains mutable.
+- [x] Checklist run-item identity and creation metadata are immutable; completion actor/timestamp are server-derived.
 - [ ] Supabase Auth leaked-password protection remains disabled; requires Auth configuration change rather than database migration.
 - [ ] Perform live employee-role RLS tests when a non-admin authenticated test identity exists; current project has only an admin profile.
 - [ ] Review `ops_records_update` field-level mutation rights; current RLS allows creator/assignee updates with only location enforced in `WITH CHECK`, but intended employee-edit semantics need to be established before tightening.
@@ -30,15 +32,16 @@ This file tracks verified findings and unresolved audit work. Items are only mar
 
 ## Tasks / checklists
 - [x] Assignee task mutation boundary hardened at database layer.
+- [x] Checklist run-item `id`, parent run, template item, and `created_at` are immutable; `completed_by`/`completed_at` are derived by the database trigger.
 - [ ] Verify recurrence completion remains idempotent under double-submit/concurrent completion.
-- [ ] Verify checklist item completion cannot be forged across checklist runs/locations.
+- [ ] Verify checklist item completion cannot be forged across checklist runs/locations using a real non-admin authenticated role session.
 
 ## Calendar / recurrence / timezones
 - [ ] Test DST spring-forward/fall-back cases and local-time preservation for recurring events.
 - [ ] Verify recurrence expansion is bounded for malformed/very old rules.
 
 ## Notifications
-- [ ] Verify notification update policy cannot mutate protected fields other than user-owned read state.
+- [x] Notification update boundary verified: existing database trigger restricts mutable fields to `read_at`; duplicate audit guard was removed after verification.
 - [ ] Verify push subscription ownership and stale subscription cleanup.
 
 ## Search
@@ -61,7 +64,7 @@ This file tracks verified findings and unresolved audit work. Items are only mar
 
 ## CI / build
 - [x] Latest application build passed the current 59-test suite before production deployment.
-- [ ] Add database-security contract tests for task/comment field immutability to CI or a migration verification script.
+- [ ] Add database-security contract tests for task/comment/notification/checklist field immutability to CI or a migration verification script.
 
 ## Deployment boundaries
 - [x] Vercel AI Gateway card-verification failure identified; direct provider path added.
