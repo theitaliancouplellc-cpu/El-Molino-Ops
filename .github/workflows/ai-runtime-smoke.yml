@@ -8,8 +8,11 @@ on:
       - 'scripts/ai-runtime-smoke.ts'
       - 'scripts/browser-ai-runtime.spec.ts'
       - 'app/ai-runtime-test/**'
+      - 'app/ask-agent-bridge.tsx'
       - 'lib/local-ai*.ts'
+      - 'lib/puter-ai-client.ts'
       - 'tests/local-ai-fallback.test.ts'
+      - 'tests/puter-ai-fallback.test.ts'
       - 'package.json'
 
 permissions:
