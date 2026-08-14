@@ -1,4 +1,5 @@
 import { runPrimaryAgent } from './primary-ai-agent';
+import { groqConfigured, runGroqAI } from './groq-ai';
 
 export type AIRole = 'system' | 'user' | 'assistant';
 export type AIMessage = { role: AIRole; content: string };
@@ -51,9 +52,13 @@ export async function runLanePlan(lanes:AILane[],start=0):Promise<AIRouterResult
   return null;
 }
 
-export function configuredFreeProviders(){return {openrouter:false,gemini:false,groq:false,githubModels:false,cloudflare:false};}
+export function configuredFreeProviders(){return {openrouter:false,gemini:false,groq:groqConfigured(),githubModels:false,cloudflare:false,vercelGateway:true};}
 
 export async function runFreeAI(messages:AIMessage[]):Promise<AIRouterResult|null>{
+  if(groqConfigured()){
+    const groq=await runGroqAI(messages);
+    if(groq)return {text:groq.text,provider:groq.provider,model:groq.model,attempts:[{provider:groq.provider,model:groq.model,ok:true,status:200}]};
+  }
   const result=await runPrimaryAgent(messages);
   if(!result)return null;
   return {text:result.text,provider:result.provider,model:result.model,attempts:[{provider:result.provider,model:result.model,ok:true,status:200}]};
