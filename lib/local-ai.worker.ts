@@ -26,8 +26,8 @@ async function usableWebGPU(){
 }
 
 async function loadFallback(){
-  const generator=await pipeline('text-generation',FALLBACK_MODEL,{dtype:'q8'} as any);
-  loadedDevice='wasm-q8';loadedModel=FALLBACK_MODEL;
+  const generator=await pipeline('text-generation',FALLBACK_MODEL,{dtype:'q4'} as any);
+  loadedDevice='wasm-q4';loadedModel=FALLBACK_MODEL;
   return generator;
 }
 
@@ -84,7 +84,7 @@ function assistantText(result:any,prompt=''){
   return '';
 }
 
-const generationOptions={max_new_tokens:360,do_sample:true,temperature:0.55,top_p:0.9,repetition_penalty:1.08,return_full_text:false};
+const generationOptions={max_new_tokens:220,do_sample:true,temperature:0.5,top_p:0.9,repetition_penalty:1.08,return_full_text:false};
 async function generate(generator:any,messages:LocalAIMessage[]){
   const prompt=await renderPrompt(generator,messages);
   const result=await generator(prompt,generationOptions as any);
