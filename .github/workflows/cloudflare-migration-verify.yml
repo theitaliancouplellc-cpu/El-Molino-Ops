@@ -28,7 +28,7 @@ jobs:
           node-version: 22
       - name: Reject unsupported Edge runtime routes
         run: |
-          if grep -R -n --include='*.ts' --include='*.tsx' --include='*.js' --include='*.jsx' -E 'export[[:space:]]+const[[:space:]]+runtime[[:space:]]*=[[:space:]]*["'"']edge["'"']' app lib 2>/dev/null; then
+          if grep -R -n --include='*.ts' --include='*.tsx' --include='*.js' --include='*.jsx' -E "export[[:space:]]+const[[:space:]]+runtime[[:space:]]*=[[:space:]]*['\"]edge['\"]" app lib 2>/dev/null; then
             echo 'Cloudflare OpenNext does not support Next.js Edge runtime routes.' >&2
             exit 1
           fi
@@ -48,6 +48,8 @@ jobs:
         run: npm run build
       - name: Build Cloudflare OpenNext output
         run: npm run cf:build
+      - name: Validate Worker bundle without deploying
+        run: npx wrangler deploy --dry-run --outdir /tmp/cloudflare-dry-run
       - name: Start local Cloudflare workerd runtime
         run: |
           npx wrangler dev --local --port 8787 > /tmp/wrangler.log 2>&1 &
