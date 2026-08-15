@@ -1,0 +1,43 @@
+name: One-time Deep Integrity Audit
+
+on:
+  push:
+    branches: [deep-integrity-audit]
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enumerate client/database mutation surfaces
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== SUPABASE MUTATIONS ==='
+          rg -n --glob='*.ts' --glob='*.tsx' "\.(insert|update|upsert|delete)\(" app lib || true
+          echo '=== CLIENT-GENERATED ISO TIMESTAMPS ==='
+          rg -n --glob='*.ts' --glob='*.tsx' "new Date\([^)]*\)\.toISOString\(\)|new Date\(\)\.toISOString\(\)" app lib || true
+          echo '=== UTC DATE SLICING / DATE-ONLY RISKS ==='
+          rg -n --glob='*.ts' --glob='*.tsx' "toISOString\(\).*slice\(|toISOString\(\).*substring\(|split\('T'\)|split\(\"T\"\)" app lib || true
+          echo '=== EMPTY / SILENT CATCHES ==='
+          rg -n -U --glob='*.ts' --glob='*.tsx' "catch\s*(\([^)]*\))?\s*\{\s*\}" app lib || true
+          echo '=== DIRECT STATUS WRITES ==='
+          rg -n --glob='*.ts' --glob='*.tsx' "status\s*:\s*['\"]|\.update\(\{[^}]*status" app lib || true
+          echo '=== CLIENT AUDIT IDENTITY FIELDS ==='
+          rg -n --glob='*.ts' --glob='*.tsx' "(created_by|updated_by|verified_by|reviewed_by|finalized_by|completed_by|invited_by)\s*:" app lib || true
+          echo '=== DIRECT LOCATION WRITES ==='
+          rg -n --glob='*.ts' --glob='*.tsx' "location_id\s*:" app lib || true
+          echo '=== RPC CALLS ==='
+          rg -n --glob='*.ts' --glob='*.tsx' "\.rpc\(" app lib || true
+      - name: Run locked regression verification
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://asuvgjxdmxizbnjrccsz.supabase.co
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_gtR8VfsQ5n-FPPbypnYKTw_f2k3Xyrk
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+          npx tsc --noEmit
