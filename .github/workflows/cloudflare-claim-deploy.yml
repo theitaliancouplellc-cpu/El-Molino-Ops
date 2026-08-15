@@ -1,0 +1,36 @@
+name: One-time Cloudflare Claim Deploy
+
+on:
+  push:
+    branches: [cloudflare-claim-deploy]
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://asuvgjxdmxizbnjrccsz.supabase.co
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_gtR8VfsQ5n-FPPbypnYKTw_f2k3Xyrk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Build Cloudflare worker
+        run: npm run cf:build
+      - name: Deploy to temporary Cloudflare account
+        run: |
+          npx wrangler deploy --temporary \
+            --var NEXT_PUBLIC_SUPABASE_URL:${NEXT_PUBLIC_SUPABASE_URL} \
+            --var NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY} \
+            2>&1 | tee /tmp/cloudflare-claim.log
+      - name: Print claim information
+        if: always()
+        run: cat /tmp/cloudflare-claim.log || true
