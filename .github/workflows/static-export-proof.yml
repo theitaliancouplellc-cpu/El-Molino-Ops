@@ -41,6 +41,7 @@ jobs:
         run: |
           mv app/api /tmp/api-routes
           mv 'app/ops-record/[id]' /tmp/ops-record-dynamic
+          mv app/ai-runtime-test /tmp/ai-runtime-test
           cat > next.config.ts <<'EOF'
           import type { NextConfig } from 'next';
           const nextConfig: NextConfig = { output: 'export', trailingSlash: true, images: { unoptimized: true } };
