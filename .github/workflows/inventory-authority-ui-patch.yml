@@ -1,0 +1,99 @@
+name: One-time inventory authority UI patch
+
+on:
+  push:
+    branches: [inventory-authority-ui]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: inventory-authority-ui-patch
+  cancel-in-progress: true
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://asuvgjxdmxizbnjrccsz.supabase.co
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_gtR8VfsQ5n-FPPbypnYKTw_f2k3Xyrk
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: inventory-authority-ui
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Apply exact inventory authority patch
+        shell: python
+        run: |
+          from pathlib import Path
+          p=Path('app/inventory/page.tsx')
+          s=p.read_text()
+          replacements=[
+            (
+              "const inventoryValue=useMemo(()=>items.filter(i=>qtyMap.has(i.id)).reduce((n,i)=>n+qtyMap.get(i.id)!*Number(i.unit_cost),0),[items,qtyMap]);",
+              "const inventoryValue=useMemo(()=>lines.reduce((n,l)=>n+Number(l.quantity)*Number(l.unit_cost_snapshot),0),[lines]);"
+            ),
+            (
+              "async function ensureTodayCount(){if(!profile?.location_id)return null;if(count?.counted_on===today())return count.id;const {data,error}=await supabase.from('inventory_counts').upsert({location_id:profile.location_id,counted_on:today(),status:'draft'},{onConflict:'location_id,counted_on'}).select('id').single();if(error)throw error;return data.id as string;}",
+              "async function ensureTodayCount(){if(!profile?.location_id)return null;if(count?.counted_on===today()){if(count.status==='final')throw new Error(\"Today's inventory count is finalized\");return count.id;}const {data,error}=await supabase.from('inventory_counts').upsert({location_id:profile.location_id,counted_on:today(),status:'draft'},{onConflict:'location_id,counted_on'}).select('id,status').single();if(error)throw error;if(data.status!=='draft')throw new Error(\"Today's inventory count is finalized\");return data.id as string;}"
+            ),
+            (
+              "const {error}=await supabase.from('inventory_count_lines').upsert({count_id:countId,item_id:item.id,quantity:Math.max(0,Number(countForm.quantity)||0),unit_cost_snapshot:Number(item.unit_cost)||0},{onConflict:'count_id,item_id'});",
+              "const {error}=await supabase.from('inventory_count_lines').upsert({count_id:countId,item_id:item.id,quantity:Math.max(0,Number(countForm.quantity)||0)},{onConflict:'count_id,item_id'});"
+            ),
+            (
+              "const {error}=await supabase.from('waste_entries').insert({location_id:profile.location_id,item_id:item.id,quantity:Math.max(.001,Number(wasteForm.quantity)||0),unit_cost_snapshot:Number(item.unit_cost)||0,reason:wasteForm.reason.trim().slice(0,1000)});",
+              "const {error}=await supabase.from('waste_entries').insert({location_id:profile.location_id,item_id:item.id,quantity:Math.max(.001,Number(wasteForm.quantity)||0),reason:wasteForm.reason.trim().slice(0,1000)});"
+            ),
+            (
+              "async function createSuggestedOrders(){if(!profile?.location_id||!count||!suggested.length||busy)return;setBusy(true);",
+              "async function finalizeCount(){if(!count||count.status!=='draft'||!lines.length||busy)return;setBusy(true);try{const {error}=await supabase.rpc('finalize_inventory_count',{p_count_id:count.id});if(error)throw error;await load();setMessage('Inventory count finalized. Cost snapshots are now locked.');}catch{setMessage('Could not finalize inventory count.');}finally{setBusy(false)}}\n  async function createSuggestedOrders(){if(!profile?.location_id||!count||count.status!=='final'||!suggested.length||busy)return;setBusy(true);"
+            ),
+            (
+              "async function setOrderStatus(id:string,status:'submitted'|'received'){if(busy)return;setBusy(true);try{const patch=status==='submitted'?{status,submitted_at:new Date().toISOString()}:{status,received_at:new Date().toISOString()};const {error}=await supabase.from('purchase_orders').update(patch).eq('id',id);if(error)throw error;await load();setMessage(`Order marked ${status}.`);}catch{setMessage('Could not update order.');}finally{setBusy(false)}}",
+              "async function setOrderStatus(id:string,status:'submitted'|'received'){if(busy)return;setBusy(true);try{const {error}=await supabase.from('purchase_orders').update({status}).eq('id',id);if(error)throw error;await load();setMessage(`Order marked ${status}.`);}catch{setMessage('Could not update order.');}finally{setBusy(false)}}"
+            ),
+            (
+              "<div className={styles.split}><section className={styles.section}><div className={styles.card}><h2>Quick count</h2><p className={styles.muted}>Latest count: {count?.counted_on||'none yet'}</p><form onSubmit={saveCount}>",
+              "<div className={styles.split}><section className={styles.section}><div className={styles.card}><h2>Quick count</h2><p className={styles.muted}>Latest count: {count?.counted_on||'none yet'}{count?` · ${count.status}`:''}</p>{count?.counted_on===today()&&count.status==='final'&&<div className={styles.notice}>Today’s count is finalized and locked. Start tomorrow’s count on the next business date.</div>}<form onSubmit={saveCount}>"
+            ),
+            (
+              "<div className={styles.actions}><button className={styles.button} disabled={busy}>Save count</button></div></form></div></section>",
+              "<div className={styles.actions}><button className={styles.button} disabled={busy||(count?.counted_on===today()&&count.status==='final')}>Save count</button>{count?.status==='draft'&&lines.length>0&&<button type=\"button\" className={styles.button} disabled={busy} onClick={finalizeCount}>Finalize count</button>}</div></form></div></section>"
+            ),
+            (
+              "<div className={styles.actions}><button className={styles.button} disabled={busy} onClick={createSuggestedOrders}>Create draft purchase orders</button></div>",
+              "<div className={styles.actions}><button className={styles.button} disabled={busy||count?.status!=='final'} onClick={createSuggestedOrders}>{count?.status==='final'?'Create draft purchase orders':'Finalize count before ordering'}</button></div>"
+            )
+          ]
+          for old,new in replacements:
+            count=s.count(old)
+            if count!=1:
+              raise SystemExit(f'expected exactly one match, found {count}: {old[:100]}')
+            s=s.replace(old,new)
+          p.write_text(s)
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Full verification
+        run: |
+          npm audit --audit-level=high
+          npm audit --omit=dev --audit-level=high
+          npm test
+          npx tsc --noEmit
+          npm run build
+          npm run cf:build
+          npx wrangler deploy --dry-run --outdir /tmp/cloudflare-dry-run
+      - name: Commit verified patch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/inventory/page.tsx
+          git commit -m 'Make inventory evidence and lifecycle authoritative'
+          git push origin HEAD:inventory-authority-ui
