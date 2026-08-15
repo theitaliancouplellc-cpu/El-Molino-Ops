@@ -14,7 +14,9 @@ const ONNX_RUNTIME_VERSION='1.22.0-dev.20250409-89f8206ba4';
 // binary through the app host. Transformers.js officially supports remotely
 // hosted WASM binaries; pin the exact runtime version from package-lock.json so
 // browser code and the downloaded engine cannot drift apart.
-env.backends.onnx.wasm.wasmPaths=`https://cdn.jsdelivr.net/npm/onnxruntime-web@${ONNX_RUNTIME_VERSION}/dist/`;
+const wasmBackend=env.backends.onnx.wasm;
+if(!wasmBackend)throw new Error('Transformers.js WASM backend is unavailable');
+wasmBackend.wasmPaths=`https://cdn.jsdelivr.net/npm/onnxruntime-web@${ONNX_RUNTIME_VERSION}/dist/`;
 
 let generatorPromise:Promise<any>|null=null;
 let loadedDevice='';
