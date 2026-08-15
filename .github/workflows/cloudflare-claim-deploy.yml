@@ -25,12 +25,19 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Build Cloudflare worker
         run: npm run cf:build
-      - name: Show largest Cloudflare assets
+      - name: Exclude remotely loaded ONNX runtime binary
         run: |
-          echo 'Largest generated assets:'
-          find .open-next/assets -type f -printf '%s %p\n' | sort -nr | head -30
+          find .open-next/assets -type f -name 'ort-wasm-*.wasm' -print -delete
+          oversized=$(find .open-next/assets -type f -size +5M -print)
+          if [ -n "$oversized" ]; then
+            echo "Cloudflare temporary deployment still contains oversized assets:" >&2
+            echo "$oversized" >&2
+            exit 1
+          fi
       - name: Deploy to temporary Cloudflare account
+        shell: bash
         run: |
+          set -euo pipefail
           npx wrangler deploy --temporary \
             --var NEXT_PUBLIC_SUPABASE_URL:${NEXT_PUBLIC_SUPABASE_URL} \
             --var NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY} \
