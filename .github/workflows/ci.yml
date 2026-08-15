@@ -9,10 +9,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     env:
       NEXT_PUBLIC_SUPABASE_URL: https://asuvgjxdmxizbnjrccsz.supabase.co
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_gtR8VfsQ5n-FPPbypnYKTw_f2k3Xyrk
@@ -27,5 +31,21 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Type check
         run: npx tsc --noEmit
-      - name: Production build
+      - name: Production build and regression suite
         run: npm run build
+      - name: Build Cloudflare OpenNext worker
+        run: npm run cf:build
+      - name: Validate Cloudflare worker bundle
+        run: npx wrangler deploy --dry-run --outdir /tmp/cloudflare-dry-run
+      - name: Smoke test Cloudflare workerd runtime
+        run: |
+          npx wrangler dev --local --port 8787 > /tmp/wrangler.log 2>&1 &
+          for i in {1..60}; do
+            if curl -fsS http://127.0.0.1:8787/api/health > /tmp/health.json; then break; fi
+            sleep 1
+          done
+          test -s /tmp/health.json || { cat /tmp/wrangler.log; exit 1; }
+          cat /tmp/health.json
+          node -e "const h=require('/tmp/health.json'); if(!h.ok || !h.checks?.filter(c=>c.required).every(c=>c.ok)) process.exit(1)"
+          curl -fsS http://127.0.0.1:8787/ > /tmp/root.html
+          grep -q 'El Molino Ops' /tmp/root.html
