@@ -1,0 +1,52 @@
+name: One-time Static Export Proof
+
+on:
+  push:
+    branches: [static-cloudflare-host]
+
+permissions:
+  contents: read
+
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://asuvgjxdmxizbnjrccsz.supabase.co
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_gtR8VfsQ5n-FPPbypnYKTw_f2k3Xyrk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Find static-export blockers and ops-record links
+        run: |
+          echo '=== API ROUTES ==='
+          find app/api -type f -maxdepth 4 -print 2>/dev/null || true
+          echo '=== DYNAMIC ROUTES ==='
+          find app -type d -name '*[*]*' -print || true
+          echo '=== OPS RECORD LINKS ==='
+          grep -RIn --include='*.ts' --include='*.tsx' '/ops-record/' app lib tests || true
+          echo '=== SERVER-ONLY NEXT FEATURES ==='
+          grep -RInE --include='*.ts' --include='*.tsx' "next/(headers|server)|cookies\(|headers\(|redirect\(|revalidate(Path|Tag)\(|use server" app lib || true
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Simulate static-only tree
+        run: |
+          mv app/api /tmp/api-routes
+          mv 'app/ops-record/[id]' /tmp/ops-record-dynamic
+          cat > next.config.ts <<'EOF'
+          import type { NextConfig } from 'next';
+          const nextConfig: NextConfig = { output: 'export', trailingSlash: true, images: { unoptimized: true } };
+          export default nextConfig;
+          EOF
+      - name: Prove remaining app can static export
+        run: |
+          npm test
+          npx tsc --noEmit || true
+          npx next build
+          test -f out/index.html
+          du -sh out
+          find out -type f -size +25M -print -quit | grep -q . && { echo 'Static asset exceeds Cloudflare free asset limit'; exit 1; } || true
