@@ -25,6 +25,10 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Build Cloudflare worker
         run: npm run cf:build
+      - name: Show largest Cloudflare assets
+        run: |
+          echo 'Largest generated assets:'
+          find .open-next/assets -type f -printf '%s %p\n' | sort -nr | head -30
       - name: Deploy to temporary Cloudflare account
         run: |
           npx wrangler deploy --temporary \
