@@ -33,6 +33,10 @@ jobs:
           grep -RInE --include='*.ts' --include='*.tsx' "next/(headers|server)|cookies\(|headers\(|redirect\(|revalidate(Path|Tag)\(|use server" app lib || true
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
+      - name: Verify production tree before simulation
+        run: |
+          npm test
+          npx tsc --noEmit
       - name: Simulate static-only tree
         run: |
           mv app/api /tmp/api-routes
@@ -44,9 +48,10 @@ jobs:
           EOF
       - name: Prove remaining app can static export
         run: |
-          npm test
-          npx tsc --noEmit || true
           npx next build
           test -f out/index.html
           du -sh out
-          find out -type f -size +25M -print -quit | grep -q . && { echo 'Static asset exceeds Cloudflare free asset limit'; exit 1; } || true
+          if find out -type f -size +25M -print -quit | grep -q .; then
+            echo 'Static asset exceeds Cloudflare free asset limit'
+            exit 1
+          fi
