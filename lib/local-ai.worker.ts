@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 
-import { pipeline } from '@huggingface/transformers';
+import { env, pipeline } from '@huggingface/transformers';
 import type { LocalAIMessage } from './local-ai-prompt';
 
 type InMessage={id:string;messages:LocalAIMessage[]};
@@ -8,6 +8,14 @@ type OutMessage={id:string;ok:boolean;text?:string;model?:string;device?:string;
 
 const PRIMARY_MODEL='onnx-community/Qwen2.5-0.5B-Instruct';
 const FALLBACK_MODEL='onnx-community/SmolLM2-135M-Instruct-ONNX-MHA';
+const ONNX_RUNTIME_VERSION='1.22.0-dev.20250409-89f8206ba4';
+
+// Keep the on-device AI fallback zero-cost without shipping ONNX's ~22 MB WASM
+// binary through the app host. Transformers.js officially supports remotely
+// hosted WASM binaries; pin the exact runtime version from package-lock.json so
+// browser code and the downloaded engine cannot drift apart.
+env.backends.onnx.wasm.wasmPaths=`https://cdn.jsdelivr.net/npm/onnxruntime-web@${ONNX_RUNTIME_VERSION}/dist/`;
+
 let generatorPromise:Promise<any>|null=null;
 let loadedDevice='';
 let loadedModel='';
