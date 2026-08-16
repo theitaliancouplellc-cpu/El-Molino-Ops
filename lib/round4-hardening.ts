@@ -14,7 +14,9 @@ export const RESTORABLE_TABLES=BACKUP_TABLES;
 export type BackupCheck={ok:boolean;errors:string[];warnings:string[];rowCount:number;tables:string[]};
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const integerId=/^[0-9]{1,20}$/;
+const schemaFingerprint=/^[0-9a-f]{32}$/i;
 export function validUuid(v:unknown){return uuid.test(String(v||''))}
+export function validSchemaFingerprint(v:unknown){return schemaFingerprint.test(String(v||''))}
 export function validRecordId(v:unknown){
   if(validUuid(v))return true;
   if(typeof v==='number')return Number.isSafeInteger(v)&&v>=0;
@@ -32,6 +34,7 @@ export function validateBackup(value:unknown,expectedLocation?:string):BackupChe
   const b=value as any;
   if(b.format!==BACKUP_FORMAT)errors.push('Unsupported or legacy backup format. Create a new v4 backup before using full recovery.');
   if(b.schema_version!==BACKUP_SCHEMA_VERSION)errors.push('Backup schema version does not match this recovery engine.');
+  if(!validSchemaFingerprint(b.schema_fingerprint))errors.push('Backup schema fingerprint is missing or invalid.');
   if(!validIsoDate(b.exported_at))errors.push('Backup export timestamp is invalid.');
   if(!validUuid(b.location_id))errors.push('Backup location is invalid.');
   if(expectedLocation&&b.location_id!==expectedLocation)errors.push('Backup belongs to a different location.');
@@ -39,6 +42,8 @@ export function validateBackup(value:unknown,expectedLocation?:string):BackupChe
   if(Array.isArray(b.errors)&&b.errors.length>0)errors.push('Backup export was incomplete and reported one or more table errors.');
   if(!b.manifest||typeof b.manifest!=='object'||Array.isArray(b.manifest))errors.push('Backup manifest is missing.');
   else if(!sameStringSet(b.manifest.tables,BACKUP_TABLES))errors.push('Backup manifest does not match the current recovery table set.');
+  if(!b.storage||typeof b.storage!=='object'||b.storage.objects_included!==false)errors.push('Backup storage scope is missing or invalid.');
+  else warnings.push('Storage object bytes are not included in this JSON recovery backup. File metadata can be recovered, but missing stored files must be restored separately.');
   if(!b.tables||typeof b.tables!=='object'||Array.isArray(b.tables))errors.push('Backup tables are missing.');
   const tables=b.tables&&typeof b.tables==='object'&&!Array.isArray(b.tables)?Object.keys(b.tables):[];
   const unknown=tables.filter(t=>!BACKUP_TABLE_SET.has(t));
