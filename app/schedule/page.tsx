@@ -28,7 +28,7 @@ const shortDate=(d:string)=>new Date(`${d}T12:00:00Z`).toLocaleDateString([],{we
 const mondayOf=(date:string)=>addDateDays(date,-((dateDayOfWeek(date)+6)%7));
 const asNum=(v:unknown,f=0)=>Number.isFinite(Number(v))?Number(v):f;
 const hhmm=(v:string|null|undefined)=>v?String(v).slice(0,5):'';
-const activeStatus=(s:string)=>['scheduled','covered','callout'].includes(s);
+const activeStatus=(s:string)=>['scheduled','covered'].includes(s);
 function localInput(iso:string,tz:string){const p=new Intl.DateTimeFormat('en-US',{timeZone:tz,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date(iso));const g=(x:string)=>p.find(y=>y.type===x)?.value||'';return `${g('year')}-${g('month')}-${g('day')}T${g('hour')}:${g('minute')}`}
 function formIso(value:string,tz:string){const [d,t]=value.split('T');return zonedLocalToIso(d,`${t}:00`,tz)}
 function availabilityDraft(rows:AvailabilityRow[],employeeId:string|null){const out:Record<number,AvailabilityDraft>={};for(const {d} of DAYS)out[d]={mode:'any',from:'10:00',to:'22:00'};if(!employeeId)return out;for(const r of rows.filter(x=>x.employee_id===employeeId)){out[r.day_of_week]=r.unavailable?{mode:'unavailable',from:'10:00',to:'22:00'}:{mode:'custom',from:hhmm(r.available_from)||'10:00',to:hhmm(r.available_to)||'22:00'}}return out}

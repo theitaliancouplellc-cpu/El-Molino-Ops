@@ -21,7 +21,7 @@ type Slot={key:string;date:string;requirement:CoverageRequirement;starts_at:stri
 type Assigned={employee_id:string;starts_at:string;ends_at:string;hours:number;date:string;shift_type:CoverageRequirement['shift_type'];role_id:string};
 type CandidateCheck={ok:boolean;reasons:string[];pendingTimeOff:boolean;softPenalty:number};
 type Run={shifts:GeneratedShift[];issues:ScheduleIssue[];objective:number;metrics:ScheduleMetrics};
-const ACTIVE_STATUSES=new Set(['scheduled','covered','callout']);
+const ACTIVE_STATUSES=new Set(['scheduled','covered']);
 const pad=(n:number)=>String(n).padStart(2,'0');
 const round2=(n:number)=>Math.round(n*100)/100;
 const num=(v:unknown,fallback=0)=>Number.isFinite(Number(v))?Number(v):fallback;
