@@ -16,9 +16,14 @@ const STAFF_SAFE_PREFIXES=[
 ] as const;
 
 export function safeEmployeeNotificationHref(value:string|null|undefined){
-  if(!value||!value.startsWith('/')||value.startsWith('//'))return '/employee';
-  const path=value.split(/[?#]/,1)[0]||'/';
-  return STAFF_SAFE_PREFIXES.some(prefix=>path===prefix||path.startsWith(`${prefix}/`))?value:'/employee';
+  if(!value||!value.startsWith('/')||value.startsWith('//')||/[\\\u0000-\u001f\u007f]/.test(value))return '/employee';
+  try{
+    const url=new URL(value,'https://staff.elmolino.invalid');
+    if(url.origin!=='https://staff.elmolino.invalid')return '/employee';
+    const path=url.pathname;
+    if(!STAFF_SAFE_PREFIXES.some(prefix=>path===prefix||path.startsWith(`${prefix}/`)))return '/employee';
+    return `${path}${url.search}${url.hash}`;
+  }catch{return '/employee'}
 }
 
 export function employeeNotificationHref(value:string|null|undefined,notificationId?:string|null){
