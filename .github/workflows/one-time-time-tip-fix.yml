@@ -1,0 +1,71 @@
+name: One-time Time Clock Tips Fix
+
+on:
+  push:
+    branches: [time-clock-tips-ui]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://asuvgjxdmxizbnjrccsz.supabase.co
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_gtR8VfsQ5n-FPPbypnYKTw_f2k3Xyrk
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: time-clock-tips-ui
+      - name: Fix compiler and state races
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          p=Path('app/time-clock/page.tsx');s=p.read_text()
+          reps=[
+            ("await load(pr,pr.location_id,tz)","await load(pr,pr.location_id||'',tz)"),
+            ("async function loadWages(periodId=selectedPeriod,only=approvedOnly){if(!periodId||!canManage)return;","async function loadWages(periodId=selectedPeriod,only=approvedOnly){if(!periodId)return;"),
+            ("const note=approved?null:prompt('What needs to be corrected?')?.trim()||'';if(!approved&&note.length<3)","const note=approved?'':prompt('What needs to be corrected?')?.trim()||'';if(!approved&&note.length<3)"),
+            ("p_approved:approved,p_dispute_note:note","p_approved:approved,p_dispute_note:approved?null:note"),
+          ]
+          for old,new in reps:
+            if s.count(old)!=1: raise SystemExit(f'time-clock marker mismatch: {old[:80]} => {s.count(old)}')
+            s=s.replace(old,new,1)
+          p.write_text(s)
+
+          p=Path('app/tips/page.tsx');s=p.read_text()
+          reps=[
+            ("await load(pr,pr.location_id);setReady(true)","await load(pr,pr.location_id||'');setReady(true)"),
+            ("setSelectedRun(row.id);setMessage(`Tip run ready: ${row.starts_on} through ${row.ends_on}.`);await load()","setMessage(`Tip run ready: ${row.starts_on} through ${row.ends_on}.`);await load();setSelectedRun(row.id)"),
+          ]
+          for old,new in reps:
+            if s.count(old)!=1: raise SystemExit(f'tips marker mismatch: {old[:80]} => {s.count(old)}')
+            s=s.replace(old,new,1)
+          p.write_text(s)
+
+          p=Path('tests/time-clock-tip-ui-contract.test.ts');s=p.read_text()
+          marker="test('Tools exposes time clock and tips',()=>{"
+          addition="""test('initial manager wage loading does not depend on stale React profile state',()=>{\n  assert.match(clock,/async function loadWages\\(periodId=selectedPeriod,only=approvedOnly\\)\\{if\\(!periodId\\)return;/);\n});\n\ntest('newly ensured tip run remains selected after data refresh',()=>{\n  assert.match(tips,/await load\\(\\);setSelectedRun\\(row\\.id\\)/);\n});\n\n"""
+          if marker not in s: raise SystemExit('test insertion marker missing')
+          s=s.replace(marker,addition+marker,1)
+          p.write_text(s)
+          PY
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: Tests
+        run: npm test
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Commit verified fixes
+        run: |
+          git config user.name "El Molino Ops CI"
+          git config user.email "theitaliancouplellc@gmail.com"
+          git add app/time-clock/page.tsx app/tips/page.tsx tests/time-clock-tip-ui-contract.test.ts
+          git commit -m "Fix Time Clock and Tips UI state integrity"
+          git push origin time-clock-tips-ui
