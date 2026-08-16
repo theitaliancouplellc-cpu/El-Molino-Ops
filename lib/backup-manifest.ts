@@ -26,7 +26,7 @@ export const BACKUP_TABLES=[
   'time_clock_settings','time_clock_pay_periods','time_clock_punches','time_clock_breaks','time_clock_punch_audit',
   'toast_sync_state','toast_employee_map','toast_time_entries','toast_order_payments','toast_cash_entries','toast_deposits',
   'tip_settings','tip_pools','tip_pool_receivers','tip_pool_runs','tip_contributions','tip_distributions','tip_run_audit',
-  'team_announcements','team_announcement_recipients','team_shoutouts','team_shoutout_reactions',
+  'team_announcements','team_announcement_recipients','team_shoutouts','team_shoutout_reactions','team_channels','team_channel_members','team_channel_messages',
   'training_lessons','training_courses','training_course_lessons','training_quiz_questions','training_course_assignments','training_course_lesson_progress','training_quiz_attempts','training_lesson_comments',
   'hiring_job_postings','hiring_applicants','hiring_stage_history','hiring_interviews','hiring_manager_notes','hiring_offers',
   'onboarding_packages','onboarding_package_items','onboarding_assignments','onboarding_item_progress','onboarding_documents','onboarding_acknowledgments','onboarding_comments',
