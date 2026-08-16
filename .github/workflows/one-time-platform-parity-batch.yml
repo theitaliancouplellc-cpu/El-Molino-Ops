@@ -1,0 +1,103 @@
+name: One-time Platform Parity Batch
+
+on:
+  push:
+    branches: [7shifts-platform-parity]
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://asuvgjxdmxizbnjrccsz.supabase.co
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_gtR8VfsQ5n-FPPbypnYKTw_f2k3Xyrk
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 7shifts-platform-parity
+      - name: Integrate Tips Team and Courses navigation
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          home=Path('app/page.tsx')
+          s=home.read_text()
+          def insert_after_anchor(source, href, html):
+              needle=f'href="{href}"'
+              i=source.find(needle)
+              if i<0: raise SystemExit(f'navigation anchor missing: {href}')
+              end=source.find('</a>', i)
+              if end<0: raise SystemExit(f'navigation closing anchor missing: {href}')
+              return source[:end+4]+html+source[end+4:]
+          if 'href="/tips"' not in s:
+              s=insert_after_anchor(s,'/time-clock','<a className="settings-row" href="/tips"><span className="settings-icon"><DollarSign/></span><span><b>Tips</b><small>My tips, pooling and payroll-ready tip reports</small></span><ChevronRight/></a>')
+          if 'href="/team"' not in s:
+              s=insert_after_anchor(s,'/tips','<a className="settings-row" href="/team"><span className="settings-icon"><Users/></span><span><b>Team</b><small>Announcements, chat and recognition</small></span><ChevronRight/></a>')
+          home.write_text(s)
+
+          manager=Path('app/time-clock/manage/page.tsx')
+          s=manager.read_text()
+          if 'href="/tips/manage"' not in s:
+              needle='href="/time-clock/kiosk"'
+              i=s.find(needle)
+              if i<0: raise SystemExit('Punch Pad navigation marker missing')
+              end=s.find('</Link>',i)
+              if end<0: raise SystemExit('Punch Pad closing Link missing')
+              html='\n          <Link className={`${styles.button} ${styles.secondary}`} href="/tips/manage">Tip Management</Link>'
+              s=s[:end+7]+html+s[end+7:]
+          manager.write_text(s)
+
+          training=Path('app/training/page.tsx')
+          s=training.read_text()
+          if 'href="/training/courses"' not in s:
+              marker='<main className={styles.page}>'
+              if marker not in s: raise SystemExit('Training main marker missing')
+              html='<section className={styles.section}><div className={styles.actions}><a className={styles.button} href="/training/courses">Courses</a></div></section>'
+              s=s.replace(marker,marker+html,1)
+          training.write_text(s)
+
+          courses=Path('app/training/courses/page.tsx')
+          s=courses.read_text().replace("<b>{comment.author_user_id === profile ? 'Manager' : 'Comment'}</b>","<b>Comment</b>")
+          courses.write_text(s)
+          PY
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Run full tests
+        run: npm test
+      - name: Type check
+        run: npx tsc --noEmit
+      - name: Production build
+        run: npm run build
+      - name: Build Cloudflare OpenNext worker
+        run: npm run cf:build
+      - name: Validate Cloudflare worker bundle
+        run: npx wrangler deploy --dry-run --outdir /tmp/cloudflare-dry-run
+      - name: Smoke test Cloudflare workerd runtime
+        run: |
+          npx wrangler dev --local --port 8787 > /tmp/wrangler.log 2>&1 &
+          for i in {1..60}; do
+            if curl -fsS http://127.0.0.1:8787/api/health > /tmp/health.json; then break; fi
+            sleep 1
+          done
+          test -s /tmp/health.json || { cat /tmp/wrangler.log; exit 1; }
+          node -e "const h=require('/tmp/health.json'); if(!h.ok || !h.checks?.filter(c=>c.required).every(c=>c.ok)) process.exit(1)"
+          curl -fsS http://127.0.0.1:8787/ > /tmp/root.html
+          grep -q 'El Molino Ops' /tmp/root.html
+      - name: Commit verified platform parity batch and clean temporary workflows
+        run: |
+          git config user.name "El Molino Ops CI"
+          git config user.email "theitaliancouplellc@gmail.com"
+          git add app/page.tsx app/time-clock/manage/page.tsx app/training/page.tsx app/training/courses/page.tsx
+          git rm -f .github/workflows/one-time-platform-parity-batch.yml
+          if test -f .github/workflows/one-time-tip-pooling-platform.yml; then git rm -f .github/workflows/one-time-tip-pooling-platform.yml; fi
+          git commit -m "Verify Tips Team and structured Training parity"
+          git push origin HEAD:7shifts-platform-parity
