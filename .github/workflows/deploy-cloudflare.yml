@@ -19,6 +19,9 @@ jobs:
     env:
       NEXT_PUBLIC_SUPABASE_URL: https://asuvgjxdmxizbnjrccsz.supabase.co
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_gtR8VfsQ5n-FPPbypnYKTw_f2k3Xyrk
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
     steps:
       - name: Checkout certified source
         uses: actions/checkout@v6
@@ -43,16 +46,60 @@ jobs:
 
       - name: Deploy production Worker
         id: cloudflare
+        if: ${{ env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' }}
         uses: cloudflare/wrangler-action@v4
         with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          apiToken: ${{ env.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy
           packageManager: npm
 
-      - name: Smoke test deployed Worker
+      - name: Deploy temporary Worker
+        id: temporary
+        if: ${{ env.CLOUDFLARE_API_TOKEN == '' || env.CLOUDFLARE_ACCOUNT_ID == '' }}
         env:
-          DEPLOYMENT_URL: ${{ steps.cloudflare.outputs.deployment-url }}
+          CLOUDFLARE_API_TOKEN: ''
+          CLOUDFLARE_ACCOUNT_ID: ''
+          NO_COLOR: '1'
+        run: |
+          set +e
+          npx wrangler deploy --temporary > /tmp/cloudflare-deploy.log 2>&1
+          status=$?
+          set -e
+
+          claim_url="$(grep -Eo 'https://dash\.cloudflare\.com/claim-preview\?claimToken=[^[:space:]]+' /tmp/cloudflare-deploy.log | tail -n 1 || true)"
+          if [ -n "$claim_url" ]; then
+            echo "::add-mask::$claim_url"
+          fi
+
+          if [ "$status" -ne 0 ]; then
+            sed -E 's#https://dash\.cloudflare\.com/claim-preview\?claimToken=[^[:space:]]+#<claim-url-redacted>#g' /tmp/cloudflare-deploy.log | tail -n 120
+            rm -f /tmp/cloudflare-deploy.log
+            exit "$status"
+          fi
+
+          deployment_url="$(grep -Eo 'https://[-A-Za-z0-9.]+\.workers\.dev' /tmp/cloudflare-deploy.log | tail -n 1 || true)"
+          test -n "$deployment_url"
+          echo "deployment-url=$deployment_url" >> "$GITHUB_OUTPUT"
+          echo 'Temporary Cloudflare Worker deployed for live verification.'
+          rm -f /tmp/cloudflare-deploy.log
+
+      - name: Resolve deployment target
+        env:
+          PROD_URL: ${{ steps.cloudflare.outputs.deployment-url }}
+          TEMP_URL: ${{ steps.temporary.outputs.deployment-url }}
+          PROD_OUTCOME: ${{ steps.cloudflare.outcome }}
+        run: |
+          if [ "$PROD_OUTCOME" = 'success' ] && [ -n "$PROD_URL" ]; then
+            echo "DEPLOYMENT_URL=$PROD_URL" >> "$GITHUB_ENV"
+            echo 'DEPLOYMENT_MODE=production' >> "$GITHUB_ENV"
+          else
+            test -n "$TEMP_URL"
+            echo "DEPLOYMENT_URL=$TEMP_URL" >> "$GITHUB_ENV"
+            echo 'DEPLOYMENT_MODE=temporary verification' >> "$GITHUB_ENV"
+          fi
+
+      - name: Smoke test deployed Worker
         run: |
           test -n "$DEPLOYMENT_URL"
           echo "Deployment URL: $DEPLOYMENT_URL"
@@ -68,14 +115,13 @@ jobs:
           curl -fsS "$DEPLOYMENT_URL/" | grep -q 'El Molino Ops'
 
       - name: Publish deployment summary
-        env:
-          DEPLOYMENT_URL: ${{ steps.cloudflare.outputs.deployment-url }}
         run: |
           {
-            echo '## Cloudflare production deployment'
+            echo '## Cloudflare deployment'
             echo
             echo "- Commit: \`${GITHUB_SHA}\`"
             echo "- Worker: \`el-molino-ops\`"
+            echo "- Mode: ${DEPLOYMENT_MODE}"
             echo "- URL: ${DEPLOYMENT_URL}"
             echo '- Health check: PASS'
           } >> "$GITHUB_STEP_SUMMARY"
