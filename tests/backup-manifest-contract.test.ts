@@ -2,8 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {BACKUP_EXCLUDED_TABLES,BACKUP_FORMAT,BACKUP_TABLES} from '../lib/backup-manifest';
 
-const SERVER_RECOVERY_TABLE_COUNT=127;
+const SERVER_RECOVERY_TABLE_COUNT=129;
 const mustCover=[
+  'employee_self_setup_claims','employee_self_setup_role_claims',
   'schedule_shifts','shift_pool_offers','time_off_requests',
   'time_clock_punches','time_clock_breaks','time_clock_pay_periods',
   'toast_sync_state','toast_employee_map','toast_time_entries','toast_order_payments','toast_cash_entries','toast_deposits',
