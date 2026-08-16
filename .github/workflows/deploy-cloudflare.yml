@@ -54,6 +54,25 @@ jobs:
           command: deploy
           packageManager: npm
 
+      - name: Prepare temporary verification assets
+        id: temp_assets
+        if: ${{ env.CLOUDFLARE_API_TOKEN == '' || env.CLOUDFLARE_ACCOUNT_ID == '' }}
+        run: |
+          find .open-next/assets -type f -size +5242880c -printf '%P\t%s\n' | sort > /tmp/temporary-omissions.tsv
+          omitted_count="$(wc -l < /tmp/temporary-omissions.tsv | tr -d ' ')"
+          echo "omitted-count=$omitted_count" >> "$GITHUB_OUTPUT"
+
+          if [ "$omitted_count" -gt 0 ]; then
+            echo 'Temporary Cloudflare accounts cap static assets at 5 MiB; omitting these production-valid assets from the verification-only deployment:'
+            cat /tmp/temporary-omissions.tsv
+            while IFS=$'\t' read -r relative_path size; do
+              test -n "$relative_path"
+              rm -f ".open-next/assets/$relative_path"
+            done < /tmp/temporary-omissions.tsv
+          else
+            echo 'No temporary-only static asset omissions required.'
+          fi
+
       - name: Deploy temporary Worker
         id: temporary
         if: ${{ env.CLOUDFLARE_API_TOKEN == '' || env.CLOUDFLARE_ACCOUNT_ID == '' }}
@@ -115,6 +134,8 @@ jobs:
           curl -fsS "$DEPLOYMENT_URL/" | grep -q 'El Molino Ops'
 
       - name: Publish deployment summary
+        env:
+          TEMP_OMITTED: ${{ steps.temp_assets.outputs.omitted-count }}
         run: |
           {
             echo '## Cloudflare deployment'
@@ -123,5 +144,8 @@ jobs:
             echo "- Worker: \`el-molino-ops\`"
             echo "- Mode: ${DEPLOYMENT_MODE}"
             echo "- URL: ${DEPLOYMENT_URL}"
+            if [ "$DEPLOYMENT_MODE" = 'temporary verification' ]; then
+              echo "- Temporary-only oversized assets omitted: ${TEMP_OMITTED:-0}"
+            fi
             echo '- Health check: PASS'
           } >> "$GITHUB_STEP_SUMMARY"
