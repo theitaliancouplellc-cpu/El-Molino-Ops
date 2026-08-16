@@ -6,7 +6,7 @@ type ToastRefund={refundAmount?:number|null;tipRefundAmount?:number|null};
 type ToastPayment={guid?:string|null;paidDate?:string|null;type?:string|null;amount?:number|null;tipAmount?:number|null;paymentStatus?:string|null;server?:ToastReference|null;refund?:ToastRefund|null;voidInfo?:unknown};
 type ToastCheck={guid?:string|null;server?:ToastReference|null;payments?:ToastPayment[]|null};
 type ToastOrder={guid?:string|null;businessDate?:number|string|null;server?:ToastReference|null;voided?:boolean|null;checks?:ToastCheck[]|null};
-type ToastCashEntry={guid?:string|null;amount?:number|null;date?:string|null;type?:string|null;employee?:ToastReference|null;creator?:ToastReference|null};
+type ToastCashEntry={guid?:string|null;amount?:number|null;date?:string|null;type?:string|null;employee1?:ToastReference|null;employee2?:ToastReference|null;creatorOrShiftReviewSubject?:ToastReference|null;approverOrShiftReviewSubject?:ToastReference|null};
 type ToastDeposit={guid?:string|null;amount?:number|null;date?:string|null;employee?:ToastReference|null;creator?:ToastReference|null};
 
 export type ToastSnapshot={
@@ -68,7 +68,7 @@ export async function fetchToastSnapshot(businessDate:string):Promise<ToastSnaps
   if(!order.guid)continue;
   for(const check of order.checks??[]){for(const payment of check.payments??[]){if(!payment.guid)continue;payments.push({guid:payment.guid,order_guid:order.guid,check_guid:check.guid??null,paid_date:payment.paidDate??null,employee_guid:payment.server?.guid??check.server?.guid??order.server?.guid??null,type:payment.type??null,amount:asNumber(payment.amount),tip_amount:asNumber(payment.tipAmount),refund_amount:asNumber(payment.refund?.refundAmount),tip_refund_amount:asNumber(payment.refund?.tipRefundAmount),payment_status:payment.paymentStatus??null,voided:Boolean(order.voided||payment.voidInfo)})}}
  }
- const cashRows=cashEntries.filter(x=>x.guid&&x.type).map(x=>({guid:x.guid,type:x.type,amount:asNumber(x.amount),date:x.date??null,employee_guid:x.employee?.guid??null,creator_guid:x.creator?.guid??null}));
+ const cashRows=cashEntries.filter(x=>x.guid&&x.type).map(x=>({guid:x.guid,type:x.type,amount:asNumber(x.amount),date:x.date??null,employee_guid:x.employee1?.guid??null,approver_guid:x.employee2?.guid??x.approverOrShiftReviewSubject?.guid??null,creator_guid:x.creatorOrShiftReviewSubject?.guid??null}));
  const depositRows=deposits.filter(x=>x.guid).map(x=>({guid:x.guid,amount:asNumber(x.amount),date:x.date??null,employee_guid:x.employee?.guid??null,creator_guid:x.creator?.guid??null}));
  return {restaurantGuid:c.restaurantGuid,employees:employeeRows,timeEntries:timeRows,payments,cashEntries:cashRows,deposits:depositRows};
 }
