@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+import {BACKUP_EXCLUDED_TABLES,BACKUP_TABLES} from '../lib/backup-manifest.ts';
 
 const tasks=readFileSync(new URL('../app/tasks/page.tsx',import.meta.url),'utf8');
 const shift=readFileSync(new URL('../app/shift/page.tsx',import.meta.url),'utf8');
@@ -59,8 +60,10 @@ test('command palette restores focus captured before opening',()=>{
   assert.match(actions,/const target=previousFocus\.current;previousFocus\.current=null;target\?\.focus\?\.\(\)/);
 });
 
-test('admin backup covers non-AI operational domains without invalid location_id filtering',()=>{
-  for(const table of ['calendar_events','discussion_rooms','discussion_messages','import_jobs','import_rows','mentions','saved_views','dashboard_widgets','push_subscriptions'])assert.match(admin,new RegExp(`'${table}'`));
+test('admin backup covers non-AI operational domains through the shared manifest without invalid location_id filtering',()=>{
+  for(const table of ['calendar_events','discussion_rooms','discussion_messages','import_jobs','import_rows','mentions','saved_views','dashboard_widgets'])assert.ok(BACKUP_TABLES.includes(table as any),`missing ${table}`);
+  assert.ok(BACKUP_EXCLUDED_TABLES.includes('push_subscriptions'));
+  assert.match(admin,/BACKUP_TABLES/);
   assert.doesNotMatch(admin,/q=q\.eq\('location_id'/);
   assert.match(admin,/Do not use it for restore/);
 });
