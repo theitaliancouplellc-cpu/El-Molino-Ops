@@ -59,7 +59,7 @@ test('employee Shift Pool exposes only hardened employee mutation paths',()=>{
 });
 
 test('employee requests are authoritative workflows rather than direct protected-table writes',()=>{
-  for(const rpc of ['submit_my_time_off_request','submit_my_availability_change']) assert.match(requests,new RegExp(rpc));
+  for(const rpc of ['submit_my_time_off_request','set_my_weekly_availability','submit_availability_request','cancel_my_time_off_request','cancel_my_availability_request']) assert.match(requests,new RegExp(rpc));
   assert.doesNotMatch(requests,/from\('time_off_requests'\)\.insert/);
   assert.doesNotMatch(requests,/from\('availability_change_requests'\)\.insert/);
 });
