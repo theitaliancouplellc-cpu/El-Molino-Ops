@@ -23,6 +23,14 @@ export function safeEmployeeNotificationHref(value:string|null|undefined){
   return STAFF_SAFE_PREFIXES.some(prefix=>path===prefix||path.startsWith(`${prefix}/`))?value:'/employee';
 }
 
+export function employeeNotificationHref(value:string|null|undefined,notificationId?:string|null){
+  const safe=safeEmployeeNotificationHref(value);
+  if(!notificationId||!safe.startsWith('/employee/schedule'))return safe;
+  const [beforeHash,hash='']=safe.split('#',2);
+  const separator=beforeHash.includes('?')?'&':'?';
+  return `${beforeHash}${separator}notice=${encodeURIComponent(notificationId)}${hash?`#${hash}`:''}`;
+}
+
 export function normalizeEmployeeNotificationCategory(value:string|null|undefined):EmployeeNotificationCategory{
   return (EMPLOYEE_NOTIFICATION_CATEGORIES as readonly string[]).includes(value||'')?value as EmployeeNotificationCategory:'general';
 }
