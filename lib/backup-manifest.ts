@@ -24,6 +24,7 @@ export const BACKUP_TABLES=[
   'schedule_settings','schedule_coverage_requirements','schedule_break_rules','schedule_daily_forecasts','schedule_periods','schedule_shifts','schedule_shift_breaks','schedule_department_publications','schedule_publication_events','schedule_generation_runs','schedule_shift_change_log','schedule_shift_feedback','schedule_attendance_flag_types','schedule_attendance_flags','schedule_school_calendar_days','schedule_templates','schedule_template_shifts','schedule_shift_reminders_sent',
   'time_off_blocked_days','time_off_requests','shift_change_requests','shift_claims','shift_pool_offers','shift_pool_offer_recipients','shift_pool_bids',
   'time_clock_settings','time_clock_pay_periods','time_clock_punches','time_clock_breaks','time_clock_punch_audit',
+  'toast_sync_state','toast_employee_map','toast_time_entries','toast_order_payments','toast_cash_entries','toast_deposits',
   'tip_settings','tip_pools','tip_pool_receivers','tip_pool_runs','tip_contributions','tip_distributions','tip_run_audit',
   'team_announcements','team_announcement_recipients','team_shoutouts','team_shoutout_reactions',
   'training_lessons','training_courses','training_course_lessons','training_quiz_questions','training_course_assignments','training_course_lesson_progress','training_quiz_attempts','training_lesson_comments',
