@@ -12,6 +12,7 @@ const eligibility=readFileSync('docs/database/employee_shift_pool_eligibility_v5
 const changes=readFileSync('docs/database/employee_shift_change_workflow_v5_2.sql','utf8');
 const candidateFix=readFileSync('docs/database/staff_trade_candidates_ambiguity_fix_v5_2_1.sql','utf8');
 const tradeSnapshot=readFileSync('docs/database/employee_shift_pool_trade_snapshot_v5_2_2.sql','utf8');
+const tradeEligibility=readFileSync('docs/database/employee_trade_eligibility_v5_3.sql','utf8');
 
 test('employee Home uses authoritative priority and Shift Pool snapshots',()=>{
  assert.match(home,/employee_home_priority_snapshot/);
@@ -57,10 +58,6 @@ test('reciprocal trade state machine requires coworker acceptance before manager
  assert.match(changes,/target_response in\('not_required','pending','accepted','declined'\)/);
  assert.match(changes,/respond_to_my_shift_trade/);
  assert.match(changes,/coworker must accept the trade before manager review/);
- assert.match(changes,/target employee is no longer qualified for source role/);
- assert.match(changes,/requester is no longer qualified for target role/);
- assert.match(changes,/trade now conflicts with approved time off/);
- assert.match(changes,/trade now conflicts with another shift/);
  assert.match(pool,/Your response needed/);
  assert.match(pool,/Accept/);
  assert.match(pool,/Decline/);
@@ -74,6 +71,15 @@ test('trade candidate discovery qualifies source employee_id to avoid PL/pgSQL o
  assert.match(candidateFix,/select s\.\* into src/);
  assert.match(candidateFix,/s\.employee_id=eid/);
  assert.doesNotMatch(candidateFix,/where id=p_shift_id and location_id=loc and employee_id=eid/);
+});
+
+test('reciprocal trade eligibility covers both employees, availability, rest and weekly-hour limits',()=>{
+ assert.match(tradeEligibility,/employee_trade_candidate_warnings/);
+ for(const code of ['role','time_off','overlap','availability','max_shift','rest','max_hours','overtime'])assert.match(tradeEligibility,new RegExp(`'${code}'`));
+ assert.match(tradeEligibility,/employee_trade_candidate_warnings\(eid,src\.id,t\.id\)/);
+ assert.match(tradeEligibility,/employee_trade_candidate_warnings\(t\.employee_id,t\.id,src\.id\)/);
+ assert.match(tradeEligibility,/review_shift_change_request was also hardened in production to rerun employee_trade_candidate_warnings/);
+ assert.match(tradeEligibility,/revoke execute on function public\.employee_trade_candidate_warnings\(uuid,uuid,uuid\) from authenticated,anon,public/);
 });
 
 test('Shift Pool snapshot is current-employee scoped and precomputes pickup warnings',()=>{
