@@ -15,13 +15,21 @@ const STAFF_SAFE_PREFIXES=[
   '/account'
 ] as const;
 
+const LEGACY_EMPLOYEE_DESTINATIONS:Record<string,string>={
+  '/schedule/pool':'/employee/shift-pool',
+  '/schedule/requests':'/employee/requests',
+  '/team':'/employee/team',
+  '/training/courses':'/employee/training',
+};
+
 export function safeEmployeeNotificationHref(value:string|null|undefined){
   if(!value||!value.startsWith('/')||value.startsWith('//')||/[\\\u0000-\u001f\u007f]/.test(value))return '/employee';
   try{
     const url=new URL(value,'https://staff.elmolino.invalid');
     if(url.origin!=='https://staff.elmolino.invalid')return '/employee';
-    const path=url.pathname;
+    let path=url.pathname;
     if(!STAFF_SAFE_PREFIXES.some(prefix=>path===prefix||path.startsWith(`${prefix}/`)))return '/employee';
+    for(const [legacy,dedicated] of Object.entries(LEGACY_EMPLOYEE_DESTINATIONS))if(path===legacy||path.startsWith(`${legacy}/`)){path=`${dedicated}${path.slice(legacy.length)}`;break}
     return `${path}${url.search}${url.hash}`;
   }catch{return '/employee'}
 }
