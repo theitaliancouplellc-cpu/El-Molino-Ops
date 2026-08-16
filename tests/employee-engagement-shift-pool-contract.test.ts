@@ -90,7 +90,8 @@ test('Shift Pool snapshot is current-employee scoped and precomputes pickup warn
  assert.match(snapshot,/can_view_shift_pool_offer/);
  assert.match(snapshot,/q\.requested_by_employee_id=eid or q\.target_employee_id=eid/);
  assert.match(snapshot,/shift_pool_candidate_warnings\(o\.id,eid\)/);
- assert.match(eligibility,/open_shift_candidate_warnings\(s\.id,eid\)/);
+ assert.match(eligibility,/create or replace function public\.open_shift_candidate_warnings/);
+ assert.match(tradeSnapshot,/open_shift_candidate_warnings\(s\.id,eid\)/);
 });
 
 test('pickup eligibility covers role, overlap, time off, availability, rest and hour limits',()=>{
