@@ -14,6 +14,7 @@ const backup=readFileSync('lib/backup-manifest.ts','utf8');
 test('employee accounts enter a dedicated staff-only app',()=>{
   assert.match(routeGuard,/app_role.*employee/);
   assert.match(routeGuard,/location\.replace\('\/employee'\)/);
+  assert.match(routeGuard,/STAFF_BLOCKED_EXACT=new Set\(\['\/schedule'\]\)/);
   for(const prefix of ['/admin','/manager','/performance','/logbook','/inventory','/safety','/maintenance','/incidents','/cash','/vendors','/procedures','/capture','/files','/menu','/ops'])assert.match(routeGuard,new RegExp(`['"]${prefix.replaceAll('/','\\/')}['"]`),`staff guard must block ${prefix}`);
   for(const href of ['/employee/schedule','/schedule/pool','/schedule/requests','/team','/training/courses','/time-clock','/tips','/account'])assert.match(home,new RegExp(href.replaceAll('/','\\/')));
   for(const managementLabel of ['Manager Dashboard','Admin Center','Cash Controls','Inventory & Food Cost','Restaurant command center'])assert.doesNotMatch(home,new RegExp(managementLabel));
@@ -30,12 +31,15 @@ test('employee setup is self-declared but manager-authorized',()=>{
   assert.match(managerHome,/href="\/manager\/team-setup"/);
 });
 
-test('employee schedule is own-shift focused with existing request workflows',()=>{
+test('employee schedule is own-shift focused with staff-safe request and trade workflows',()=>{
   assert.match(schedule,/\.eq\('employee_id',emp\)/);
   assert.match(schedule,/offer_my_shift_to_pool/);
   assert.match(schedule,/shift_change_requests/);
+  assert.match(schedule,/request_type:'swap'/);
+  assert.match(schedule,/Submit Trade/);
   assert.match(schedule,/href="\/schedule\/pool"/);
   assert.match(schedule,/href="\/schedule\/requests"/);
+  assert.doesNotMatch(schedule,/href="\/schedule">Trade Shift/);
   assert.doesNotMatch(schedule,/Auto Schedule/);
   assert.doesNotMatch(schedule,/Publish Entire Schedule/);
   assert.doesNotMatch(schedule,/Labor Budget/);
