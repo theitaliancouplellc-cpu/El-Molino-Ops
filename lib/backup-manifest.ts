@@ -18,7 +18,7 @@ export const BACKUP_TABLES=[
   'restaurant_performance_targets','restaurant_daily_performance','cash_control_sessions',
   'tasks','task_dependencies','comments','ops_records','calendar_events',
   'discussion_rooms','discussion_messages','files','entity_file_links','import_jobs','import_rows',
-  'activity_log','notifications','mentions','favorites','recent_views','saved_views','dashboard_widgets',
+  'activity_log','notifications','notification_preferences','mentions','favorites','recent_views','saved_views','dashboard_widgets',
   'ai_conversations','ai_messages','user_preferences','user_invitations','content_versions',
   'food_safety_temperature_points',
   'schedule_settings','schedule_coverage_requirements','schedule_break_rules','schedule_daily_forecasts','schedule_periods','schedule_shifts','schedule_shift_breaks','schedule_department_publications','schedule_publication_events','schedule_generation_runs','schedule_shift_change_log','schedule_shift_feedback','schedule_attendance_flag_types','schedule_attendance_flags','schedule_school_calendar_days','schedule_templates','schedule_template_shifts','schedule_shift_reminders_sent',

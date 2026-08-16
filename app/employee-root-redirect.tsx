@@ -5,9 +5,9 @@ import {usePathname} from 'next/navigation';
 import {supabase} from '@/lib/supabase';
 
 const STAFF_BLOCKED_PREFIXES=[
- '/admin','/manager','/performance','/logbook','/inventory','/safety','/maintenance','/incidents','/cash','/vendors','/procedures','/capture','/files','/menu','/ops',
+ '/admin','/manager','/performance','/logbook','/inventory','/safety','/maintenance','/incidents','/cash','/vendors','/procedures','/capture','/files','/menu','/ops','/tools',
 ];
-const STAFF_BLOCKED_EXACT=new Set(['/schedule']);
+const STAFF_BLOCKED_EXACT=new Set(['/schedule','/time-clock','/tips']);
 const blockedForEmployee=(pathname:string)=>STAFF_BLOCKED_EXACT.has(pathname)||STAFF_BLOCKED_PREFIXES.some(prefix=>pathname===prefix||pathname.startsWith(`${prefix}/`));
 
 export default function EmployeeRootRedirect(){
