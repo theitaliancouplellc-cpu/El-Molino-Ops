@@ -1,0 +1,7 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {generateSchedule,type GenerateScheduleInput} from '../lib/scheduling-engine';
+
+const input:GenerateScheduleInput={period:{id:'p',starts_on:'2026-08-17',ends_on:'2026-08-23',revision:0,status:'draft'},employees:[{id:'e',full_name:'Server A',active:true}],roles:[{id:'r',name:'Server'}],roleAssignments:[{employee_id:'e',role_id:'r'}],availability:[],timeOff:[],profiles:[{employee_id:'e',min_weekly_hours:0,target_weekly_hours:40,max_weekly_hours:60,max_shift_hours:12,min_rest_hours:8,max_consecutive_days:6,hourly_rate:15,avoid_overtime:true,preferred_days_off:[],preferred_start:null,preferred_end:null,allow_split_shifts:true,min_split_gap_hours:.5}],requirements:[{id:'bd',name:'Server opener - BD',day_of_week:1,role_id:'r',starts_at:'10:30:00',ends_at:'21:30:00',min_staff:1,target_staff:1,max_staff:1,break_minutes:0,priority:95,shift_type:'opening',active:true,effective_from:null,effective_to:null,demand_scalable:false,department:'foh',end_mode:'business_decline',earliest_cut_at:'17:00:00',template_key:'foh_server_opener_bd'}],existingShifts:[],settings:{timezone:'America/New_York',overtime_after_hours:40,mode:'target',preserve_manual_shifts:true}};
+
+test('business-decline shift remains a safe max-time shift but is labeled BD',()=>{const x=generateSchedule(input);assert.equal(x.metrics.assigned_slots,1);assert.match(x.shifts[0].notes,/business decline \(BD\)/);assert.equal(x.shifts[0].ends_at,'2026-08-18T01:30:00.000Z')});
