@@ -23,15 +23,11 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-
-          # Expand the main Schedule tools hub.
           p=Path('app/schedule/page.tsx');s=p.read_text()
           old='<Link className={`${styles.button} ${styles.secondary}`} href="/schedule/warnings">Warnings & Quick Fix</Link><Link className={`${styles.button} ${styles.secondary}`} href="/schedule/breaks">Breaks</Link><Link className={`${styles.button} ${styles.secondary}`} href="/schedule/publish">Publish Center</Link><Link className={`${styles.button} ${styles.secondary}`} href="/schedule/settings">Settings</Link>'
           new='<Link className={`${styles.button} ${styles.secondary}`} href="/schedule/warnings">Warnings & Quick Fix</Link><Link className={`${styles.button} ${styles.secondary}`} href="/schedule/labor">Labor Budget</Link><Link className={`${styles.button} ${styles.secondary}`} href="/schedule/attendance">Attendance</Link><Link className={`${styles.button} ${styles.secondary}`} href="/schedule/compliance">Compliance</Link><Link className={`${styles.button} ${styles.secondary}`} href="/schedule/templates">Copy & Templates</Link><Link className={`${styles.button} ${styles.secondary}`} href="/schedule/activity">Activity Log</Link><Link className={`${styles.button} ${styles.secondary}`} href="/schedule/team">Team Notes</Link><Link className={`${styles.button} ${styles.secondary}`} href="/calendar">Events</Link><Link className={`${styles.button} ${styles.secondary}`} href="/schedule/breaks">Breaks</Link><Link className={`${styles.button} ${styles.secondary}`} href="/schedule/publish">Publish Center</Link><Link className={`${styles.button} ${styles.secondary}`} href="/schedule/settings">Settings</Link>'
           if old not in s: raise SystemExit('schedule hub marker missing')
           p.write_text(s.replace(old,new,1))
-
-          # Show Calendar Events directly in date/time schedule views.
           p=Path('app/schedule/views/page.tsx');s=p.read_text()
           old="type Employee={id:string;full_name:string};type Role={id:string;name:string;department:string|null};type Shift={id:string;employee_id:string|null;role_id:string|null;starts_at:string;ends_at:string;status:string;notes:string|null;source:string|null};"
           new=old+"type Event={id:string;title:string;event_type:string;starts_at:string;ends_at:string;all_day:boolean;description:string|null};"
@@ -59,16 +55,9 @@ jobs:
           new_list='<div className={styles.list}>{es.map(ev=><div className={styles.entry} key={\'event-\'+ev.id}><b>EVENT · {ev.title}</b><small>{ev.all_day?\'All day\':fmtTime(ev.starts_at)+\'–\'+fmtTime(ev.ends_at)} · {ev.event_type}</small>{ev.description&&<small>{ev.description}</small>}</div>)}{ds.map(s=>'
           if old_list in s:s=s.replace(old_list,new_list,1)
           p.write_text(s)
-
-          # Expand the permanent parity contract test.
           p=Path('tests/scheduling-parity-ui-contract.test.ts');t=p.read_text()
           t=t.replace("'/schedule/publish','/schedule/settings'","'/schedule/publish','/schedule/settings','/schedule/labor','/schedule/attendance','/schedule/compliance','/schedule/templates','/schedule/activity','/schedule/team','/calendar'")
-          extra="""
-test('expanded scheduling parity workspaces keep their real backend contracts',()=>{
- const labor=readFileSync('app/schedule/labor/page.tsx','utf8'),attendance=readFileSync('app/schedule/attendance/page.tsx','utf8'),compliance=readFileSync('app/schedule/compliance/page.tsx','utf8'),templates=readFileSync('app/schedule/templates/page.tsx','utf8'),activity=readFileSync('app/schedule/activity/page.tsx','utf8'),team=readFileSync('app/schedule/team/page.tsx','utf8'),warnings=readFileSync('app/schedule/warnings/page.tsx','utf8'),views=readFileSync('app/schedule/views/page.tsx','utf8');
- assert.match(labor,/schedule_labor_budget_report/);assert.match(attendance,/record_schedule_attendance_flag/);assert.match(compliance,/schedule_compliance_warnings/);assert.match(compliance,/set_schedule_school_day/);assert.match(templates,/copy_schedule_period/);assert.match(templates,/save_schedule_period_as_template/);assert.match(templates,/duplicate_schedule_shift/);assert.match(activity,/schedule_shift_change_log/);assert.match(activity,/shift_pool_offers/);assert.match(team,/employee_schedule_profiles/);assert.match(warnings,/schedule_compliance_warnings/);assert.match(views,/calendar_events/);
-});
-"""
+          extra="\ntest('expanded scheduling parity workspaces keep their real backend contracts',()=>{\n const labor=readFileSync('app/schedule/labor/page.tsx','utf8'),attendance=readFileSync('app/schedule/attendance/page.tsx','utf8'),compliance=readFileSync('app/schedule/compliance/page.tsx','utf8'),templates=readFileSync('app/schedule/templates/page.tsx','utf8'),activity=readFileSync('app/schedule/activity/page.tsx','utf8'),team=readFileSync('app/schedule/team/page.tsx','utf8'),warnings=readFileSync('app/schedule/warnings/page.tsx','utf8'),views=readFileSync('app/schedule/views/page.tsx','utf8');\n assert.match(labor,/schedule_labor_budget_report/);assert.match(attendance,/record_schedule_attendance_flag/);assert.match(compliance,/schedule_compliance_warnings/);assert.match(compliance,/set_schedule_school_day/);assert.match(templates,/copy_schedule_period/);assert.match(templates,/save_schedule_period_as_template/);assert.match(templates,/duplicate_schedule_shift/);assert.match(activity,/schedule_shift_change_log/);assert.match(activity,/shift_pool_offers/);assert.match(team,/employee_schedule_profiles/);assert.match(warnings,/schedule_compliance_warnings/);assert.match(views,/calendar_events/);\n});\n"
           if 'expanded scheduling parity workspaces' not in t:t+=extra
           p.write_text(t)
           PY
