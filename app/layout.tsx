@@ -6,6 +6,7 @@ import PWARegister from './pwa-register';
 import GlobalActions from './global-actions';
 import ErrorSanitizer from './error-sanitizer';
 import AskAgentBridge from './ask-agent-bridge';
+import EmployeeRootRedirect from './employee-root-redirect';
 
 export const metadata: Metadata = {
   title: { default: 'El Molino Ops', template: '%s · El Molino Ops' },
@@ -33,6 +34,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <body>
         <PWARegister />
         <ErrorSanitizer />
+        <EmployeeRootRedirect />
         <GlobalActions />
         <AskAgentBridge />
         {children}

@@ -9,7 +9,7 @@ export const BACKUP_CHUNK_ROWS=250;
 // and to the backup contract test before an export can claim to be complete.
 export const BACKUP_TABLES=[
   'locations','profiles',
-  'employee_roles','employees','employee_role_assignments','employee_schedule_profiles','employee_availability','employee_availability_overrides','availability_change_requests','employee_compliance_profiles',
+  'employee_roles','employees','employee_role_assignments','employee_self_setup_claims','employee_self_setup_role_claims','employee_schedule_profiles','employee_availability','employee_availability_overrides','availability_change_requests','employee_compliance_profiles',
   'areas','stations',
   'knowledge_sources','knowledge_items','procedures','procedure_steps',
   'checklist_templates','checklist_template_items','checklist_runs','checklist_run_items',
