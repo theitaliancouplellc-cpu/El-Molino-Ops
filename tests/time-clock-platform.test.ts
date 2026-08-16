@@ -53,3 +53,9 @@ test('Time Clock Settings exposes self-service, kiosk, geofence, pay-period and 
   assert.match(page, /manager_set_time_clock_pin/);
   assert.match(page, /Use This Device’s Current Coordinates/);
 });
+
+test('Time Clock is exposed from the main Ops navigation', () => {
+  const home = read('app/page.tsx');
+  assert.match(home, /href="\/time-clock"/);
+  assert.match(home, />Time Clock</);
+});
