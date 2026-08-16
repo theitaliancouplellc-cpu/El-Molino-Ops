@@ -23,6 +23,11 @@ jobs:
           python - <<'PY'
           from pathlib import Path
 
+          pool=Path('app/schedule/pool/page.tsx')
+          ps=pool.read_text()
+          ps=ps.replace("async function act(fn:()=>Promise<{error:any}>|Promise<any>,ok:string)","async function act(fn:()=>any,ok:string)")
+          pool.write_text(ps)
+
           p=Path('app/schedule/page.tsx')
           s=p.read_text()
           marker="  async function submitSwap(){"
@@ -57,7 +62,7 @@ jobs:
         run: |
           git config user.name "El Molino Ops CI"
           git config user.email "theitaliancouplellc@gmail.com"
-          git add app/schedule/page.tsx tests/scheduling-shift-pool-contract.test.ts
+          git add app/schedule/page.tsx app/schedule/pool/page.tsx tests/scheduling-shift-pool-contract.test.ts
           if git diff --cached --quiet; then exit 0; fi
           git commit -m "Wire Shift Pool offer-up workflow into Schedule"
           git push origin HEAD:scheduling-7shifts-parity
