@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {BACKUP_EXCLUDED_TABLES,BACKUP_FORMAT,BACKUP_TABLES} from '../lib/backup-manifest';
 
-const SERVER_RECOVERY_TABLE_COUNT=129;
+const SERVER_RECOVERY_TABLE_COUNT=130;
 const mustCover=[
   'employee_self_setup_claims','employee_self_setup_role_claims',
   'schedule_shifts','shift_pool_offers','time_off_requests',
@@ -14,6 +14,7 @@ const mustCover=[
   'hiring_applicants','hiring_offers',
   'onboarding_packages','onboarding_assignments',
   'restaurant_daily_performance','cash_control_sessions','inventory_counts','purchase_orders',
+  'notification_preferences',
 ] as const;
 
 test('v4 backup manifest covers modern operational modules',()=>{
