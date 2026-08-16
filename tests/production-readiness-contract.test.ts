@@ -11,11 +11,21 @@ const commands=read('app/global-actions.tsx');
 const mobile=read('app/employee/mobile-polish.css');
 const cache=read('lib/employee-schedule-cache.ts');
 const backup=read('lib/backup-manifest.ts');
+const manifest=read('public/manifest.webmanifest');
 const readiness=read('docs/release/PRODUCTION_READINESS.md');
 
 test('release certification artifacts are explicit and general availability is evidence-gated',()=>{
   for(const phrase of ['Authentication and authorization','Schedule lifecycle','Network resilience','Pilot certification','Staged rollout','General availability']) assert.match(readiness,new RegExp(phrase));
   assert.match(readiness,/General availability is permitted only after all automated gates pass and the real-user pilot thresholds are met/);
+});
+
+test('installed PWA identity is safe for both staff and management',()=>{
+  const parsed=JSON.parse(manifest);
+  assert.equal(parsed.name,'El Molino');
+  assert.equal(parsed.display,'standalone');
+  assert.equal(parsed.start_url,'/');
+  assert.match(parsed.description,/staff and management/i);
+  assert.ok(!Array.isArray(parsed.shortcuts)||parsed.shortcuts.length===0,'role-specific install shortcuts must not leak manager-only destinations to staff');
 });
 
 test('employees remain structurally separated from management and sensitive shared surfaces',()=>{
