@@ -46,7 +46,7 @@ test('announcement events deep-link into employee Team Hub and urgent notices re
  assert.match(events,/p_priority='urgent'/);
  assert.match(events,/team\.announcement/);
  assert.match(events,/\/employee\/team\?announcement=/);
- assert.match(events,/new\.href='\/employee\/team'/);
+ assert.match(events,/new\.href:='\/employee\/team'/);
  assert.match(migration,/acknowledged_at/);
 });
 
