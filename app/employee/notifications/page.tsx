@@ -3,7 +3,7 @@
 import {useEffect,useMemo,useState} from 'react';
 import {ArrowLeft,Bell,CheckCheck,ChevronRight,Filter,Settings2} from 'lucide-react';
 import {supabase} from '@/lib/supabase';
-import {EMPLOYEE_NOTIFICATION_CATEGORY_LABELS,normalizeEmployeeNotificationCategory,notificationTimeLabel,safeEmployeeNotificationHref,type EmployeeNotificationCategory} from '@/lib/employee-notifications';
+import {EMPLOYEE_NOTIFICATION_CATEGORY_LABELS,employeeNotificationHref,normalizeEmployeeNotificationCategory,notificationTimeLabel,type EmployeeNotificationCategory} from '@/lib/employee-notifications';
 import styles from '../employee.module.css';
 
 type Profile={app_role:'admin'|'manager'|'employee'};
@@ -26,7 +26,7 @@ export default function EmployeeNotificationCenter(){
  }
  async function openNotice(n:Notice){
   if(!n.read_at)await supabase.rpc('mark_my_notification_read',{p_notification_id:n.id});
-  location.href=safeEmployeeNotificationHref(n.href)
+  location.href=employeeNotificationHref(n.href,n.id)
  }
  async function markAll(){
   if(busy)return;setBusy(true);const {error}=await supabase.rpc('mark_all_my_notifications_read',{p_category:filter==='all'?null:filter});
