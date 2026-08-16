@@ -10,9 +10,9 @@ const migration=readFileSync('docs/database/employee_parity_notifications_v1.sql
 const deepLinks=readFileSync('docs/database/employee_parity_staff_deep_links_v1.sql','utf8');
 const backup=readFileSync('lib/backup-manifest.ts','utf8');
 
-test('employee notification links are constrained to staff-safe surfaces',()=>{
+test('employee notification links are constrained to normalized staff-safe surfaces',()=>{
   for(const href of ['/employee','/employee/schedule?week=2026-08-17','/employee/time-clock','/employee/tips','/schedule/pool','/schedule/requests','/team','/training/courses','/account'])assert.equal(safeEmployeeNotificationHref(href),href);
-  for(const href of ['/manager','/admin','/tools','/time-clock','/tips','/schedule','//evil.example/path','https://example.com'])assert.equal(safeEmployeeNotificationHref(href),'/employee');
+  for(const href of ['/manager','/admin','/tools','/time-clock','/tips','/schedule','//evil.example/path','https://example.com','/employee/../manager','/employee/%2e%2e/admin','/team/../../cash'])assert.equal(safeEmployeeNotificationHref(href),'/employee');
   assert.equal(employeeNotificationHref('/employee/schedule?week=2026-08-17','abc'),'/employee/schedule?week=2026-08-17&notice=abc');
   assert.equal(employeeNotificationHref('/team','abc'),'/team');
 });
