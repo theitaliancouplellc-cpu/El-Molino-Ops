@@ -12,8 +12,6 @@ const STAFF_SAFE_PREFIXES=[
   '/schedule/feedback',
   '/team',
   '/training/courses',
-  '/time-clock',
-  '/tips',
   '/account'
 ] as const;
 
