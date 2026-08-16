@@ -1,0 +1,79 @@
+name: One-time FOH BD Template Patch
+
+on:
+  push:
+    branches: [foh-bd-template]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: foh-bd-template
+      - name: Patch scheduling engine and UI
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          p=Path('lib/scheduling-engine.ts')
+          s=p.read_text()
+          s=s.replace(
+            "export type CoverageRequirement={id:string;name:string;day_of_week:number;role_id:string;starts_at:string;ends_at:string;min_staff:number;target_staff:number;max_staff:number|null;break_minutes:number;priority:number;shift_type:'opening'|'mid'|'closing'|'other';active:boolean;effective_from:string|null;effective_to:string|null;demand_scalable?:boolean};",
+            "export type CoverageRequirement={id:string;name:string;day_of_week:number;role_id:string;starts_at:string;ends_at:string;min_staff:number;target_staff:number;max_staff:number|null;break_minutes:number;priority:number;shift_type:'opening'|'mid'|'closing'|'other';active:boolean;effective_from:string|null;effective_to:string|null;demand_scalable?:boolean;department?:'foh'|'boh'|'management'|'other';end_mode?:'fixed'|'business_decline';earliest_cut_at?:string|null;template_key?:string|null};"
+          )
+          s=s.replace(
+            "notes:`Auto-scheduler could not fill ${slot.requirement.name}.`",
+            "notes:`Auto-scheduler could not fill ${slot.requirement.name}.${slot.requirement.end_mode==='business_decline'?' This is a BD shift; the listed end is the safe latest end.':''}`"
+          )
+          s=s.replace(
+            "notes:`Auto-scheduled for ${slot.requirement.name}; qualified and available, projected ${round2(after)} hrs this week.`",
+            "notes:`Auto-scheduled for ${slot.requirement.name}; qualified and available, projected ${round2(after)} hrs this week.${slot.requirement.end_mode==='business_decline'?' Shift ends at business decline (BD); the listed end time is the safe latest end.':''}`"
+          )
+          p.write_text(s)
+
+          p=Path('app/schedule/page.tsx')
+          s=p.read_text()
+          s=s.replace("type Role={id:string;name:string};","type Role={id:string;name:string;department?:'foh'|'boh'|'management'|'other'};")
+          s=s.replace("supabase.from('employee_roles').select('id,name').eq('location_id',locationId).order('name')","supabase.from('employee_roles').select('id,name,department').eq('location_id',locationId).order('name')")
+          s=s.replace("supabase.from('schedule_coverage_requirements').select('id,name,day_of_week,role_id,starts_at,ends_at,min_staff,target_staff,max_staff,break_minutes,priority,shift_type,active,effective_from,effective_to')","supabase.from('schedule_coverage_requirements').select('id,name,day_of_week,role_id,starts_at,ends_at,min_staff,target_staff,max_staff,break_minutes,priority,shift_type,active,effective_from,effective_to,demand_scalable,department,end_mode,earliest_cut_at,template_key')")
+          marker="async function addCoverage(e:FormEvent)"
+          fn="""async function applyApprovedFohTemplate(){if(!canManage||!profile?.location_id||busy)return;setBusy(true);const {data,error}=await supabase.rpc('apply_standard_foh_staffing_template',{p_host_days:[4,5,6,0],p_open:'10:30',p_close:'21:30'});if(error)setMessage('Could not apply the approved FOH template. Make sure Server, Bartender and Host roles exist.');else{setMessage(`Approved FOH template applied (${data||39} weekly staffing blocks).`);await load()}setBusy(false)}\n\n  """
+          if fn.strip() not in s:
+              s=s.replace(marker,fn+marker,1)
+
+          old="<div className={styles.card}><h2>Coverage requirements</h2><p>Define the staffing skeleton once. Auto Schedule fills these blocks every week while respecting employee constraints.</p><form onSubmit={addCoverage}>"
+          new="<div className={styles.card}><h2>Coverage requirements</h2><p>Set the restaurant staffing pattern once. Auto Schedule assigns actual employees every week while respecting availability, time off, qualifications, hours and labor rules.</p><div className={styles.notice}><b>Approved FOH pattern</b><small style={{display:'block',marginTop:6}}>Servers: 2 openers; one cuts at 5 PM, one stays to BD; 2 closers start at 3 PM. Bartender: opener until 3 PM, closer from 3 PM to close. Host: 3 PM to BD on Thu–Sun. BOH is not changed.</small></div><div className={styles.actions}><button type=\"button\" className={styles.button} disabled={busy} onClick={applyApprovedFohTemplate}>Apply Approved FOH Template</button></div><details style={{marginTop:14}}><summary style={{fontWeight:800,cursor:'pointer'}}>Advanced: add one coverage block manually</summary><form onSubmit={addCoverage}>"
+          if old in s:
+              s=s.replace(old,new,1)
+          s=s.replace("</form><div className={styles.list}>{requirements.map(r=>", "</form></details><div className={styles.list}>{requirements.map(r=>",1)
+
+          s=s.replace("<small>{roleName(r.role_id)} · {hhmm(r.starts_at)}–{hhmm(r.ends_at)} · min {r.min_staff} / target {r.target_staff} · priority {r.priority}</small>","<small>{roleName(r.role_id)} · {hhmm(r.starts_at)}–{r.end_mode==='business_decline'?'BD':hhmm(r.ends_at)}{r.end_mode==='business_decline'?` (latest ${hhmm(r.ends_at)})`:''} · min {r.min_staff} / target {r.target_staff} · priority {r.priority}</small>")
+          s=s.replace("<small>{hhmm(x.req.starts_at)}–{hhmm(x.req.ends_at)} · minimum {x.req.min_staff} · target {x.req.target_staff}</small>","<small>{hhmm(x.req.starts_at)}–{x.req.end_mode==='business_decline'?'BD':hhmm(x.req.ends_at)}{x.req.end_mode==='business_decline'?` · latest ${hhmm(x.req.ends_at)}`:''} · minimum {x.req.min_staff} · target {x.req.target_staff}</small>")
+
+          old_week="<small>{localInput(s.starts_at,settings.timezone).slice(11)}–{localInput(s.ends_at,settings.timezone).slice(11)} · {shiftNetHours(s.starts_at,s.ends_at,s.break_minutes).toFixed(1)} hrs · {s.source}{s.is_locked?' · locked':''}</small>"
+          new_week="<small>{localInput(s.starts_at,settings.timezone).slice(11)}–{requirements.find(r=>r.id===s.coverage_requirement_id)?.end_mode==='business_decline'?'BD':localInput(s.ends_at,settings.timezone).slice(11)} · {shiftNetHours(s.starts_at,s.ends_at,s.break_minutes).toFixed(1)} max hrs · {s.source}{s.is_locked?' · locked':''}</small>"
+          s=s.replace(old_week,new_week,1)
+          p.write_text(s)
+
+          test=Path('tests/scheduling-business-decline.test.ts')
+          test.write_text("""import test from 'node:test';\nimport assert from 'node:assert/strict';\nimport {generateSchedule,type GenerateScheduleInput} from '../lib/scheduling-engine';\n\nconst input:GenerateScheduleInput={period:{id:'p',starts_on:'2026-08-17',ends_on:'2026-08-23',revision:0,status:'draft'},employees:[{id:'e',full_name:'Server A',active:true}],roles:[{id:'r',name:'Server'}],roleAssignments:[{employee_id:'e',role_id:'r'}],availability:[],timeOff:[],profiles:[{employee_id:'e',min_weekly_hours:0,target_weekly_hours:40,max_weekly_hours:60,max_shift_hours:12,min_rest_hours:8,max_consecutive_days:6,hourly_rate:15,avoid_overtime:true,preferred_days_off:[],preferred_start:null,preferred_end:null,allow_split_shifts:true,min_split_gap_hours:.5}],requirements:[{id:'bd',name:'Server opener - BD',day_of_week:1,role_id:'r',starts_at:'10:30:00',ends_at:'21:30:00',min_staff:1,target_staff:1,max_staff:1,break_minutes:0,priority:95,shift_type:'opening',active:true,effective_from:null,effective_to:null,demand_scalable:false,department:'foh',end_mode:'business_decline',earliest_cut_at:'17:00:00',template_key:'foh_server_opener_bd'}],existingShifts:[],settings:{timezone:'America/New_York',overtime_after_hours:40,mode:'target',preserve_manual_shifts:true}};\n\ntest('business-decline shift remains a safe max-time shift but is labeled BD',()=>{const x=generateSchedule(input);assert.equal(x.metrics.assigned_slots,1);assert.match(x.shifts[0].notes,/business decline \(BD\)/);assert.equal(x.shifts[0].ends_at,'2026-08-18T01:30:00.000Z')});\n""")
+          PY
+      - name: Verify
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+          npx tsc --noEmit
+          npm run cf:build
+          npx wrangler deploy --dry-run
+      - name: Commit patch
+        run: |
+          git config user.name "El Molino Ops CI"
+          git config user.email "theitaliancouplellc@gmail.com"
+          git add lib/scheduling-engine.ts app/schedule/page.tsx tests/scheduling-business-decline.test.ts
+          git commit -m "Model approved FOH template and business-decline shifts"
+          git push origin HEAD:foh-bd-template
