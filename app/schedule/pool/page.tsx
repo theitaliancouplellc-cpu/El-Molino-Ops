@@ -53,7 +53,7 @@ export default function ShiftPoolPage(){
   const mineOffers=useMemo(()=>me?offers.filter(x=>x.offered_by_employee_id===me.id):[],[offers,me]);
   const mineBids=useMemo(()=>me?bids.filter(x=>x.employee_id===me.id):[],[bids,me]);
 
-  async function act(fn:()=>Promise<{error:any}>|Promise<any>,ok:string){if(busy)return;setBusy(true);try{const res=await fn();if(res?.error)throw res.error;setMessage(ok);await load()}catch(e:any){setMessage(e?.message||'That Shift Pool action could not be completed.')}finally{setBusy(false)}}
+  async function act(fn:()=>any,ok:string){if(busy)return;setBusy(true);try{const res=await fn();if(res?.error)throw res.error;setMessage(ok);await load()}catch(e:any){setMessage(e?.message||'That Shift Pool action could not be completed.')}finally{setBusy(false)}}
   const bid=(offer:Offer)=>act(()=>supabase.rpc('bid_on_shift_pool_offer',{p_offer_id:offer.id,p_comment:null}),'Bid submitted. You are not responsible for the shift unless it is approved.');
   const withdrawOffer=(offer:Offer)=>act(()=>supabase.rpc('withdraw_my_shift_pool_offer',{p_offer_id:offer.id}),'Shift taken back from the pool.');
   const withdrawBid=(bidRow:Bid)=>act(()=>supabase.rpc('withdraw_my_shift_pool_bid',{p_bid_id:bidRow.id}),'Bid withdrawn.');
