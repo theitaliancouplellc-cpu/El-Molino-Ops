@@ -34,16 +34,16 @@ jobs:
           j=s.find(" as const;\nexport default function",i)
           if j<0: raise SystemExit('old backup table declaration end not found')
           s=s[:i]+";type EventRow={id:string;event_type:string;route:string|null;message:string|null;created_at:string};\nexport default function"+s[j+len(" as const;\nexport default function"):]
-          old="const out:any={exported_at:new Date().toISOString(),format:'el-molino-ops-backup-v3',location_id:me.location_id,tables:{},errors:[]};"
-          new="const out:any={exported_at:new Date().toISOString(),format:BACKUP_FORMAT,schema_version:BACKUP_SCHEMA_VERSION,location_id:me.location_id,manifest:{tables:[...BACKUP_TABLES],excluded:BACKUP_EXCLUSIONS},tables:{},errors:[]};"
-          if s.count(old)!=1: raise SystemExit('old backup envelope not found')
+          old="async function exportBackup(){if(busy||!me?.location_id)return;setBusy(true);setMessage('Preparing export…');const out:any={exported_at:new Date().toISOString(),format:'el-molino-ops-backup-v3',location_id:me.location_id,tables:{},errors:[]};"
+          new="async function exportBackup(){if(busy||!me?.location_id)return;setBusy(true);setMessage('Preparing export…');const {data:fingerprint,error:fpErr}=await supabase.rpc('backup_restore_schema_fingerprint');if(fpErr||typeof fingerprint!=='string'){setMessage('Could not bind this backup to the current database schema. Nothing was downloaded.');setBusy(false);return}const out:any={exported_at:new Date().toISOString(),format:BACKUP_FORMAT,schema_version:BACKUP_SCHEMA_VERSION,schema_fingerprint:fingerprint,location_id:me.location_id,manifest:{tables:[...BACKUP_TABLES],excluded:BACKUP_EXCLUSIONS},storage:{objects_included:false,note:'Database recovery only. Uploaded file bytes are not contained in this JSON backup.'},tables:{},errors:[]};"
+          if s.count(old)!=1: raise SystemExit('old backup function anchor not found')
           s=s.replace(old,new,1)
           old="'Backup downloaded successfully.'"
-          new="`Backup downloaded successfully. ${BACKUP_TABLES.length} recovery tables captured; credential/runtime exclusions are recorded in the manifest.`"
+          new="`Database recovery backup downloaded. ${BACKUP_TABLES.length} recovery tables captured. Uploaded file bytes and credential/runtime exclusions are not inside this JSON backup.`"
           if s.count(old)!=1: raise SystemExit('backup success text not found')
           s=s.replace(old,new,1)
           old='<button className="btn" disabled={busy} onClick={exportBackup}><Download/> Export all accessible app data</button>'
-          new='<div className="row-actions"><button className="btn" disabled={busy} onClick={exportBackup}><Download/> Export recovery backup</button><a className="btn secondary" href="/admin/restore">Restore backup</a></div>'
+          new='<div className="row-actions"><button className="btn" disabled={busy} onClick={exportBackup}><Download/> Export recovery backup</button><a className="btn secondary" href="/admin/restore">Restore backup</a></div><div className="notice" style={{marginTop:10}}>Recovery backup covers database records. Uploaded file bytes and account credentials are not embedded in the JSON file.</div>'
           if s.count(old)!=1: raise SystemExit('backup button anchor drifted')
           s=s.replace(old,new,1)
           p.write_text(s)
@@ -61,5 +61,5 @@ jobs:
           git config user.name "El Molino Ops CI"
           git config user.email "theitaliancouplellc@gmail.com"
           git add app/admin/page.tsx
-          git commit -m "Use complete v4 backup manifest for export"
+          git commit -m "Use schema-bound v4 backup export"
           git push origin backup-recovery-v1
