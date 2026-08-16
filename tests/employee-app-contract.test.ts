@@ -14,6 +14,7 @@ const backup=readFileSync('lib/backup-manifest.ts','utf8');
 test('employee accounts enter a dedicated staff-only app',()=>{
   assert.match(routeGuard,/app_role.*employee/);
   assert.match(routeGuard,/location\.replace\('\/employee'\)/);
+  for(const prefix of ['/admin','/manager','/performance','/logbook','/inventory','/safety','/maintenance','/incidents','/cash','/vendors','/procedures','/capture','/files','/menu','/ops'])assert.match(routeGuard,new RegExp(`['"]${prefix.replaceAll('/','\\/')}['"]`),`staff guard must block ${prefix}`);
   for(const href of ['/employee/schedule','/schedule/pool','/schedule/requests','/team','/training/courses','/time-clock','/tips','/account'])assert.match(home,new RegExp(href.replaceAll('/','\\/')));
   for(const managementLabel of ['Manager Dashboard','Admin Center','Cash Controls','Inventory & Food Cost','Restaurant command center'])assert.doesNotMatch(home,new RegExp(managementLabel));
 });
