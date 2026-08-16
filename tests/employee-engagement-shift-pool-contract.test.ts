@@ -5,10 +5,13 @@ import {readFileSync} from 'node:fs';
 const home=readFileSync('app/employee/page.tsx','utf8');
 const schedule=readFileSync('app/employee/schedule/page.tsx','utf8');
 const pool=readFileSync('app/employee/shift-pool/page.tsx','utf8');
+const managerPool=readFileSync('app/schedule/pool/page.tsx','utf8');
 const legacy=readFileSync('app/schedule/pool/layout.tsx','utf8');
 const snapshot=readFileSync('docs/database/employee_engagement_shift_pool_v5.sql','utf8');
 const eligibility=readFileSync('docs/database/employee_shift_pool_eligibility_v5_1.sql','utf8');
 const changes=readFileSync('docs/database/employee_shift_change_workflow_v5_2.sql','utf8');
+const candidateFix=readFileSync('docs/database/staff_trade_candidates_ambiguity_fix_v5_2_1.sql','utf8');
+const tradeSnapshot=readFileSync('docs/database/employee_shift_pool_trade_snapshot_v5_2_2.sql','utf8');
 
 test('employee Home uses authoritative priority and Shift Pool snapshots',()=>{
  assert.match(home,/employee_home_priority_snapshot/);
@@ -61,6 +64,16 @@ test('reciprocal trade state machine requires coworker acceptance before manager
  assert.match(pool,/Your response needed/);
  assert.match(pool,/Accept/);
  assert.match(pool,/Decline/);
+ assert.match(managerPool,/target_response,target_responded_at/);
+ assert.match(managerPool,/WAITING ON COWORKER/);
+ assert.match(managerPool,/disabled=\{busy\|\|!targetAccepted\}/);
+ assert.match(tradeSnapshot,/'target_response',q\.target_response/);
+});
+
+test('trade candidate discovery qualifies source employee_id to avoid PL/pgSQL output-name ambiguity',()=>{
+ assert.match(candidateFix,/select s\.\* into src/);
+ assert.match(candidateFix,/s\.employee_id=eid/);
+ assert.doesNotMatch(candidateFix,/where id=p_shift_id and location_id=loc and employee_id=eid/);
 });
 
 test('Shift Pool snapshot is current-employee scoped and precomputes pickup warnings',()=>{
