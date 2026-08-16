@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ArrowLeft, CalendarDays, Camera, ChevronRight, CircleUserRound, Loader2, Menu as MenuIcon, MessageSquare, ShieldCheck, Wrench, ClipboardList, ClipboardCheck, UserRound, Gauge, FolderOpen, Activity, Star, WandSparkles, Clock3, Coins } from 'lucide-react';
+import { ArrowLeft, CalendarDays, Camera, ChevronRight, CircleUserRound, Loader2, Menu as MenuIcon, MessageSquare, ShieldCheck, Wrench, ClipboardList, ClipboardCheck, UserRound, Gauge, FolderOpen, Activity, Star, WandSparkles, Clock3, Coins, Megaphone, GraduationCap } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 type Profile={app_role:'admin'|'manager'|'employee'};
@@ -11,6 +11,8 @@ const common=[
   {href:'/my-work',icon:UserRound,title:'My Work',body:'Your assignments and today’s checklist responsibilities'},
   {href:'/time-clock',icon:Clock3,title:'Time Clock',body:'Clock in/out, breaks, punch approvals, pay periods and worked hours'},
   {href:'/tips',icon:Coins,title:'Tips',body:'Your finalized tips, or manager tip-pool setup and distribution'},
+  {href:'/team',icon:Megaphone,title:'Team Hub',body:'Targeted announcements, read tracking and teammate recognition'},
+  {href:'/training/courses',icon:GraduationCap,title:'Structured Training',body:'Sequenced courses, quizzes, task review and auditable completion'},
   {href:'/schedule/preferences',icon:CalendarDays,title:'Scheduling Preferences',body:'Preferred days off and preferred work hours for the optimizer'},
   {href:'/ops',icon:ClipboardList,title:'Operations Center',body:'Handoffs, logs, maintenance, food safety, inventory, training and more'},
   {href:'/procedures',icon:ClipboardCheck,title:'Procedure Builder',body:'Draft, approve and convert procedures into checklists'},
