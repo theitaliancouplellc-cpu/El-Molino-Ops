@@ -8,13 +8,18 @@ const preferences=readFileSync('app/employee/notifications/preferences/page.tsx'
 const schedule=readFileSync('app/employee/schedule/page.tsx','utf8');
 const migration=readFileSync('docs/database/employee_parity_notifications_v1.sql','utf8');
 const deepLinks=readFileSync('docs/database/employee_parity_staff_deep_links_v1.sql','utf8');
+const engagement=readFileSync('docs/database/employee_engagement_shift_pool_v5.sql','utf8');
 const backup=readFileSync('lib/backup-manifest.ts','utf8');
 
-test('employee notification links are constrained to normalized staff-safe surfaces',()=>{
-  for(const href of ['/employee','/employee/schedule?week=2026-08-17','/employee/time-clock','/employee/tips','/schedule/pool','/schedule/requests','/team','/training/courses','/account'])assert.equal(safeEmployeeNotificationHref(href),href);
+test('employee notification links are constrained and canonicalized to dedicated staff surfaces',()=>{
+  for(const href of ['/employee','/employee/schedule?week=2026-08-17','/employee/time-clock','/employee/tips','/employee/shift-pool','/employee/requests','/employee/team','/employee/training','/account'])assert.equal(safeEmployeeNotificationHref(href),href);
+  assert.equal(safeEmployeeNotificationHref('/schedule/pool?tab=mine'),'/employee/shift-pool?tab=mine');
+  assert.equal(safeEmployeeNotificationHref('/schedule/requests'),'/employee/requests');
+  assert.equal(safeEmployeeNotificationHref('/team?announcement=abc'),'/employee/team?announcement=abc');
+  assert.equal(safeEmployeeNotificationHref('/training/courses'),'/employee/training');
   for(const href of ['/manager','/admin','/tools','/time-clock','/tips','/schedule','//evil.example/path','https://example.com','/employee/../manager','/employee/%2e%2e/admin','/team/../../cash'])assert.equal(safeEmployeeNotificationHref(href),'/employee');
   assert.equal(employeeNotificationHref('/employee/schedule?week=2026-08-17','abc'),'/employee/schedule?week=2026-08-17&notice=abc');
-  assert.equal(employeeNotificationHref('/team','abc'),'/team');
+  assert.equal(employeeNotificationHref('/team','abc'),'/employee/team');
 });
 
 test('notification center uses server-authoritative read state and contextual schedule links',()=>{
@@ -51,9 +56,13 @@ test('published schedule notifications are revision-aware and changed-only is ev
   assert.match(schedule,/Updated in the latest publication/);
 });
 
-test('legacy staff notification deep links are migrated to dedicated employee surfaces',()=>{
+test('legacy staff notification deep links migrate to dedicated employee surfaces including Shift Pool',()=>{
   assert.match(deepLinks,/\/employee\/time-clock/);
   assert.match(deepLinks,/\/employee\/tips/);
   assert.match(deepLinks,/\/employee\/schedule/);
+  assert.match(engagement,/new\.href:='\/employee\/shift-pool'/);
+  assert.match(engagement,/new\.href:='\/employee\/requests'/);
+  assert.match(engagement,/new\.href:='\/employee\/team'/);
+  assert.match(engagement,/new\.href:='\/employee\/training'/);
   assert.match(backup,/notification_preferences/);
 });

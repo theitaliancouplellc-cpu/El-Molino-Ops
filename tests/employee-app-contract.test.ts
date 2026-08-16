@@ -16,10 +16,14 @@ test('employee accounts enter a dedicated staff-only app',()=>{
   assert.match(routeGuard,/location\.replace\('\/employee'\)/);
   assert.match(routeGuard,/STAFF_BLOCKED_EXACT=new Set\(\['\/schedule','\/time-clock','\/tips'\]\)/);
   for(const prefix of ['/admin','/manager','/performance','/logbook','/inventory','/safety','/maintenance','/incidents','/cash','/vendors','/procedures','/capture','/files','/menu','/ops','/tools'])assert.match(routeGuard,new RegExp(`['"]${prefix.replaceAll('/','\\/')}['"]`),`staff guard must block ${prefix}`);
-  for(const href of ['/employee/notifications','/employee/schedule','/schedule/pool','/schedule/requests','/team','/training/courses','/employee/time-clock','/employee/tips','/account'])assert.match(home,new RegExp(href.replaceAll('/','\\/')));
+  for(const href of ['/employee/notifications','/employee/schedule','/employee/shift-pool','/employee/requests','/employee/team','/employee/training','/employee/time-clock','/employee/tips','/account'])assert.match(home,new RegExp(href.replaceAll('/','\\/')));
   for(const managementLabel of ['Manager Dashboard','Admin Center','Cash Controls','Inventory & Food Cost','Restaurant command center'])assert.doesNotMatch(home,new RegExp(managementLabel));
   assert.doesNotMatch(home,/href="\/time-clock"/);
   assert.doesNotMatch(home,/href="\/tips"/);
+  assert.doesNotMatch(home,/href="\/schedule\/pool"/);
+  assert.doesNotMatch(home,/href="\/schedule\/requests"/);
+  assert.doesNotMatch(home,/href="\/team"/);
+  assert.doesNotMatch(home,/href="\/training\/courses"/);
 });
 
 test('employee setup is self-declared but manager-authorized',()=>{
@@ -33,15 +37,16 @@ test('employee setup is self-declared but manager-authorized',()=>{
   assert.match(managerHome,/href="\/manager\/team-setup"/);
 });
 
-test('employee schedule is own-shift focused with server-filtered trade discovery',()=>{
+test('employee schedule is own-shift focused with server-filtered trade discovery and RPC mutations',()=>{
   assert.match(schedule,/\.eq\('employee_id',emp\)/);
   assert.match(schedule,/offer_my_shift_to_pool/);
-  assert.match(schedule,/shift_change_requests/);
-  assert.match(schedule,/request_type:'swap'/);
+  assert.match(schedule,/submit_my_shift_change_request/);
+  assert.match(schedule,/p_request_type:'swap'/);
   assert.match(schedule,/staff_trade_candidates/);
-  assert.match(schedule,/Submit Trade/);
-  assert.match(schedule,/href="\/schedule\/pool"/);
-  assert.match(schedule,/href="\/schedule\/requests"/);
+  assert.match(schedule,/Send Trade Request/);
+  assert.match(schedule,/href="\/employee\/shift-pool"/);
+  assert.match(schedule,/href="\/employee\/requests"/);
+  assert.doesNotMatch(schedule,/from\('shift_change_requests'\)/);
   assert.doesNotMatch(schedule,/from\('employees'\)/);
   assert.doesNotMatch(schedule,/from\('employee_role_assignments'\)/);
   assert.doesNotMatch(schedule,/Auto Schedule/);
@@ -53,7 +58,7 @@ test('employee command palette cannot surface manager command catalog or blocked
   assert.match(commands,/employeeCommands/);
   assert.match(commands,/appRole==='employee'\?employeeCommands:managerCommands/);
   assert.match(commands,/appRole==='employee'\)\{setResults\(\[\]\)/);
-  for(const staffHref of ['/employee','/employee/notifications','/employee/schedule','/schedule/pool','/schedule/requests','/employee/time-clock','/employee/tips'])assert.match(commands,new RegExp(staffHref.replaceAll('/','\\/')));
+  for(const staffHref of ['/employee','/employee/notifications','/employee/schedule','/employee/time-clock','/employee/tips'])assert.match(commands,new RegExp(staffHref.replaceAll('/','\\/')));
   const employeeCatalog=commands.split('const employeeCommands')[1]?.split('const stableResultHref')[0]||'';
   assert.doesNotMatch(employeeCatalog,/href:'\/time-clock'/);
   assert.doesNotMatch(employeeCatalog,/href:'\/tips'/);
