@@ -3,6 +3,7 @@ export const BACKUP_SCHEMA_VERSION=4 as const;
 export const BACKUP_MAX_TABLE_ROWS=100_000;
 export const BACKUP_MAX_TOTAL_ROWS=500_000;
 export const BACKUP_MAX_FILE_BYTES=50*1024*1024;
+export const BACKUP_CHUNK_ROWS=250;
 
 // Recovery data is deliberately explicit. New persistent tables must be added here
 // and to the backup contract test before an export can claim to be complete.
@@ -49,8 +50,10 @@ export type BackupEnvelope={
   exported_at:string;
   format:typeof BACKUP_FORMAT;
   schema_version:typeof BACKUP_SCHEMA_VERSION;
+  schema_fingerprint:string;
   location_id:string;
   manifest:{tables:readonly BackupTable[];excluded:typeof BACKUP_EXCLUSIONS};
+  storage:{objects_included:false;note:string};
   tables:Partial<Record<BackupTable,unknown[]>>;
   errors:{table:string;error:string}[];
 };
