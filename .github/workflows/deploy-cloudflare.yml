@@ -44,6 +44,32 @@ jobs:
       - name: Build Cloudflare OpenNext worker
         run: npm run cf:build
 
+      - name: Validate Cloudflare Free production limits
+        id: limits
+        run: |
+          set -euo pipefail
+
+          largest_asset="$(find .open-next/assets -type f -printf '%s\t%P\n' | sort -nr | head -n 1)"
+          largest_asset_bytes="${largest_asset%%$'\t'*}"
+          largest_asset_path="${largest_asset#*$'\t'}"
+          max_asset_bytes=26214400
+
+          echo "largest-asset-bytes=$largest_asset_bytes" >> "$GITHUB_OUTPUT"
+          echo "largest-asset-path=$largest_asset_path" >> "$GITHUB_OUTPUT"
+          echo "Largest static asset: $largest_asset_path ($largest_asset_bytes bytes)"
+
+          if [ "$largest_asset_bytes" -gt "$max_asset_bytes" ]; then
+            echo "Static asset exceeds Cloudflare Workers 25 MiB production limit."
+            exit 1
+          fi
+
+          npx wrangler deploy --dry-run --outdir /tmp/wrangler-dry-run 2>&1 | tee /tmp/wrangler-dry-run.log
+          gzip_kib="$(sed -nE 's/.*gzip: ([0-9]+([.][0-9]+)?) KiB.*/\1/p' /tmp/wrangler-dry-run.log | tail -n 1)"
+          test -n "$gzip_kib"
+          echo "worker-gzip-kib=$gzip_kib" >> "$GITHUB_OUTPUT"
+
+          node -e "const kib=Number(process.argv[1]); const freeLimit=3*1000*1000/1024; if(!Number.isFinite(kib)||kib>freeLimit){console.error('Worker exceeds Cloudflare Workers Free 3 MB gzip limit:',kib,'KiB');process.exit(1)} console.log('Worker gzip size:',kib,'KiB; Cloudflare Workers Free limit:',freeLimit.toFixed(2),'KiB')" "$gzip_kib"
+
       - name: Deploy production Worker
         id: cloudflare
         if: ${{ env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' }}
@@ -54,71 +80,30 @@ jobs:
           command: deploy
           packageManager: npm
 
-      - name: Prepare temporary verification assets
-        id: temp_assets
-        if: ${{ env.CLOUDFLARE_API_TOKEN == '' || env.CLOUDFLARE_ACCOUNT_ID == '' }}
-        run: |
-          find .open-next/assets -type f -size +5242880c -printf '%P\t%s\n' | sort > /tmp/temporary-omissions.tsv
-          omitted_count="$(wc -l < /tmp/temporary-omissions.tsv | tr -d ' ')"
-          echo "omitted-count=$omitted_count" >> "$GITHUB_OUTPUT"
-
-          if [ "$omitted_count" -gt 0 ]; then
-            echo 'Temporary Cloudflare accounts cap static assets at 5 MiB; omitting these production-valid assets from the verification-only deployment:'
-            cat /tmp/temporary-omissions.tsv
-            while IFS=$'\t' read -r relative_path size; do
-              test -n "$relative_path"
-              rm -f ".open-next/assets/$relative_path"
-            done < /tmp/temporary-omissions.tsv
-          else
-            echo 'No temporary-only static asset omissions required.'
-          fi
-
-      - name: Deploy temporary Worker
-        id: temporary
+      - name: Record authenticated deployment requirement
         if: ${{ env.CLOUDFLARE_API_TOKEN == '' || env.CLOUDFLARE_ACCOUNT_ID == '' }}
         env:
-          CLOUDFLARE_API_TOKEN: ''
-          CLOUDFLARE_ACCOUNT_ID: ''
-          NO_COLOR: '1'
+          WORKER_GZIP_KIB: ${{ steps.limits.outputs.worker-gzip-kib }}
+          LARGEST_ASSET_PATH: ${{ steps.limits.outputs.largest-asset-path }}
+          LARGEST_ASSET_BYTES: ${{ steps.limits.outputs.largest-asset-bytes }}
         run: |
-          set +e
-          npx wrangler deploy --temporary > /tmp/cloudflare-deploy.log 2>&1
-          status=$?
-          set -e
-
-          claim_url="$(grep -Eo 'https://dash\.cloudflare\.com/claim-preview\?claimToken=[^[:space:]]+' /tmp/cloudflare-deploy.log | tail -n 1 || true)"
-          if [ -n "$claim_url" ]; then
-            echo "::add-mask::$claim_url"
-          fi
-
-          if [ "$status" -ne 0 ]; then
-            sed -E 's#https://dash\.cloudflare\.com/claim-preview\?claimToken=[^[:space:]]+#<claim-url-redacted>#g' /tmp/cloudflare-deploy.log | tail -n 120
-            rm -f /tmp/cloudflare-deploy.log
-            exit "$status"
-          fi
-
-          deployment_url="$(grep -Eo 'https://[-A-Za-z0-9.]+\.workers\.dev' /tmp/cloudflare-deploy.log | tail -n 1 || true)"
-          test -n "$deployment_url"
-          echo "deployment-url=$deployment_url" >> "$GITHUB_OUTPUT"
-          echo 'Temporary Cloudflare Worker deployed for live verification.'
-          rm -f /tmp/cloudflare-deploy.log
-
-      - name: Resolve deployment target
-        env:
-          PROD_URL: ${{ steps.cloudflare.outputs.deployment-url }}
-          TEMP_URL: ${{ steps.temporary.outputs.deployment-url }}
-          PROD_OUTCOME: ${{ steps.cloudflare.outcome }}
-        run: |
-          if [ "$PROD_OUTCOME" = 'success' ] && [ -n "$PROD_URL" ]; then
-            echo "DEPLOYMENT_URL=$PROD_URL" >> "$GITHUB_ENV"
-            echo 'DEPLOYMENT_MODE=production' >> "$GITHUB_ENV"
-          else
-            test -n "$TEMP_URL"
-            echo "DEPLOYMENT_URL=$TEMP_URL" >> "$GITHUB_ENV"
-            echo 'DEPLOYMENT_MODE=temporary verification' >> "$GITHUB_ENV"
-          fi
+          {
+            echo '## Cloudflare production preflight'
+            echo
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Worker: \`el-molino-ops\`"
+            echo '- Release gates: PASS'
+            echo '- OpenNext build: PASS'
+            echo "- Worker gzip: ${WORKER_GZIP_KIB} KiB (Free limit: 3 MB)"
+            echo "- Largest asset: \`${LARGEST_ASSET_PATH}\` (${LARGEST_ASSET_BYTES} bytes; limit: 25 MiB)"
+            echo '- Production package limits: PASS'
+            echo '- Publish: READY — authenticated Cloudflare account required'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Smoke test deployed Worker
+        if: ${{ steps.cloudflare.outcome == 'success' }}
+        env:
+          DEPLOYMENT_URL: ${{ steps.cloudflare.outputs.deployment-url }}
         run: |
           test -n "$DEPLOYMENT_URL"
           echo "Deployment URL: $DEPLOYMENT_URL"
@@ -133,19 +118,18 @@ jobs:
           node -e "const h=require('/tmp/health.json'); if(!h.ok || !h.checks?.filter(c=>c.required).every(c=>c.ok)) process.exit(1)"
           curl -fsS "$DEPLOYMENT_URL/" | grep -q 'El Molino Ops'
 
-      - name: Publish deployment summary
+      - name: Publish production deployment summary
+        if: ${{ steps.cloudflare.outcome == 'success' }}
         env:
-          TEMP_OMITTED: ${{ steps.temp_assets.outputs.omitted-count }}
+          DEPLOYMENT_URL: ${{ steps.cloudflare.outputs.deployment-url }}
+          WORKER_GZIP_KIB: ${{ steps.limits.outputs.worker-gzip-kib }}
         run: |
           {
-            echo '## Cloudflare deployment'
+            echo '## Cloudflare production deployment'
             echo
             echo "- Commit: \`${GITHUB_SHA}\`"
             echo "- Worker: \`el-molino-ops\`"
-            echo "- Mode: ${DEPLOYMENT_MODE}"
+            echo "- Worker gzip: ${WORKER_GZIP_KIB} KiB"
             echo "- URL: ${DEPLOYMENT_URL}"
-            if [ "$DEPLOYMENT_MODE" = 'temporary verification' ]; then
-              echo "- Temporary-only oversized assets omitted: ${TEMP_OMITTED:-0}"
-            fi
             echo '- Health check: PASS'
           } >> "$GITHUB_STEP_SUMMARY"
