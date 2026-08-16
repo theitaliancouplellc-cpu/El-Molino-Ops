@@ -41,6 +41,18 @@ jobs:
           s=s.replace('You remain responsible until another employee is approved and the schedule is reassigned.','You remain responsible for it until another employee is approved and the schedule is reassigned.')
           p.write_text(s)
           PY
+      - name: Wrap publish controls in a JSX fragment
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('app/schedule/page.tsx')
+          s=p.read_text()
+          old='<button className={styles.button} disabled={busy} onClick={publishPeriod}>Publish Entire Schedule</button><Link className={`${styles.button} ${styles.secondary}`} href="/schedule/publish">Publish Center</Link>'
+          new='<><button className={styles.button} disabled={busy} onClick={publishPeriod}>Publish Entire Schedule</button><Link className={`${styles.button} ${styles.secondary}`} href="/schedule/publish">Publish Center</Link></>'
+          if old not in s:
+              raise SystemExit('publish control marker missing')
+          p.write_text(s.replace(old,new,1))
+          PY
       - uses: actions/setup-node@v4
         with:
           node-version: 22
