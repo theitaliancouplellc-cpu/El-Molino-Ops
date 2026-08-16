@@ -1,0 +1,45 @@
+name: One-time Parity Integration Diagnostic
+
+on:
+  push:
+    branches: [scheduling-7shifts-parity]
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://asuvgjxdmxizbnjrccsz.supabase.co
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_gtR8VfsQ5n-FPPbypnYKTw_f2k3Xyrk
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: scheduling-7shifts-parity
+      - name: Reuse exact integration patch
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          src=Path('.github/workflows/one-time-parity-ui-integration.yml').read_text().splitlines()
+          start=next(i for i,l in enumerate(src) if "python - <<'PY'" in l)+1
+          end=next(i for i in range(start,len(src)) if src[i].strip()=='PY')
+          lines=[]
+          for line in src[start:end]:
+              lines.append(line[10:] if line.startswith('          ') else line)
+          Path('/tmp/integrate.py').write_text('\n'.join(lines)+'\n')
+          PY
+          python /tmp/integrate.py
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Tests
+        run: npm test
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Next production build
+        run: npm run build
+      - name: Cloudflare OpenNext build
+        run: npm run cf:build
+      - name: Wrangler dry run
+        run: npx wrangler deploy --dry-run
