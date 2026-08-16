@@ -1,7 +1,7 @@
 {
-  "name": "El Molino Ops",
+  "name": "El Molino",
   "short_name": "El Molino",
-  "description": "Private operations workspace for El Molino Taqueria — Johns Island",
+  "description": "Private staff and management workspace for El Molino Taqueria — Johns Island",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -10,11 +10,5 @@
   "orientation": "portrait-primary",
   "icons": [
     { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
-  ],
-  "shortcuts": [
-    { "name": "Ask El Molino", "short_name": "Ask AI", "url": "/?tab=ai" },
-    { "name": "Capture", "short_name": "Capture", "url": "/capture" },
-    { "name": "Calendar", "short_name": "Calendar", "url": "/calendar" },
-    { "name": "Tools", "short_name": "Tools", "url": "/tools" }
   ]
 }
