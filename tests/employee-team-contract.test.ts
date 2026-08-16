@@ -3,9 +3,11 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 
 const team=readFileSync('app/employee/team/page.tsx','utf8');
+const managerTeam=readFileSync('app/team/page.tsx','utf8');
 const legacy=readFileSync('app/team/layout.tsx','utf8');
 const migration=readFileSync('docs/database/employee_team_communications_v4.sql','utf8');
 const events=readFileSync('docs/database/employee_team_communications_v4_1.sql','utf8');
+const rpcHardening=readFileSync('docs/database/employee_team_rpc_surface_hardening_v4_2.sql','utf8');
 const backup=readFileSync('lib/backup-manifest.ts','utf8');
 
 test('employee Team Hub is a dedicated employee-only surface',()=>{
@@ -33,6 +35,7 @@ test('staff conversations are membership-gated RPC data, not location-wide table
  assert.match(migration,/m\.employee_id=me/);
  assert.match(migration,/m\.employee_id<>me/);
  assert.match(migration,/team\.message/);
+ assert.match(rpcHardening,/revoke execute on function public\.resolve_manager_on_duty_employee_id\(\) from authenticated,anon,public/);
 });
 
 test('manager-on-duty routing prefers active scheduled managers and has a fallback',()=>{
@@ -48,6 +51,9 @@ test('announcement events deep-link into employee Team Hub and urgent notices re
  assert.match(events,/\/employee\/team\?announcement=/);
  assert.match(events,/new\.href:='\/employee\/team'/);
  assert.match(migration,/acknowledged_at/);
+ assert.match(managerTeam,/p_requires_acknowledgment:announcement\.requires_acknowledgment/);
+ assert.match(managerTeam,/Urgent announcements always require employee acknowledgment/);
+ assert.match(managerTeam,/Acknowledged/);
 });
 
 test('Team Hub conversation evidence is included in portable recovery',()=>{
