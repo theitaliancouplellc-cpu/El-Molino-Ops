@@ -7,15 +7,15 @@ import styles from '../ops-tools.module.css';
 import {businessDateInZone} from '@/lib/intermediate-hardening';
 import {
   addDateDays,dateDayOfWeek,generateSchedule,shiftNetHours,zonedLocalToIso,
-  type AvailabilityRow,type CoverageRequirement,type ExistingShift,type GenerateScheduleInput,type ScheduleGenerationResult,type ScheduleProfile
+  type AvailabilityRow,type TemporaryAvailabilityRow,type CoverageRequirement,type ExistingShift,type GenerateScheduleInput,type ScheduleGenerationResult,type ScheduleProfile
 } from '@/lib/scheduling-engine';
 
 type Profile={app_role:'admin'|'manager'|'employee';location_id:string|null};
 type Employee={id:string;full_name:string;user_id:string|null;active:boolean};
 type Role={id:string;name:string;department?:'foh'|'boh'|'management'|'other'};
-type RoleAssignment={employee_id:string;role_id:string};
+type RoleAssignment={employee_id:string;role_id:string;skill_level?:number};
 type Shift=ExistingShift&{updated_at:string;notes:string|null;is_locked:boolean;source:string;schedule_period_id:string|null;coverage_requirement_id:string|null};
-type TimeOff={id:string;employee_id:string;starts_on:string;ends_on:string;reason:string|null;status:string;created_at:string};
+type TimeOff={id:string;employee_id:string;starts_on:string;ends_on:string;reason:string|null;status:string;created_at:string;category?:'unpaid'|'paid'|'paid_sick';full_day?:boolean;starts_at_time?:string|null;ends_at_time?:string|null};
 type ChangeReq={id:string;shift_id:string;target_shift_id:string|null;request_type:string;requested_by_employee_id:string|null;target_employee_id:string|null;reason:string|null;status:string;created_at:string};
 type Claim={id:string;shift_id:string;employee_id:string;status:string;created_at:string};
 type Period={id:string;starts_on:string;ends_on:string;status:string;revision:number;published_at:string|null;generated_at:string|null};
@@ -38,7 +38,7 @@ function defaultScheduleProfile(employeeId:string):ScheduleProfile{return {emplo
 export default function SchedulePage(){
   const [ready,setReady]=useState(false),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[profile,setProfile]=useState<Profile|null>(null),[me,setMe]=useState<Employee|null>(null);
   const [weekStart,setWeekStart]=useState(()=>mondayOf(businessDateInZone())),[period,setPeriod]=useState<Period|null>(null),[settings,setSettings]=useState<Settings>(DEFAULT_SETTINGS);
-  const [employees,setEmployees]=useState<Employee[]>([]),[roles,setRoles]=useState<Role[]>([]),[roleAssignments,setRoleAssignments]=useState<RoleAssignment[]>([]),[availability,setAvailability]=useState<AvailabilityRow[]>([]),[availDraft,setAvailDraft]=useState<Record<number,AvailabilityDraft>>(()=>availabilityDraft([],null)),[timeOff,setTimeOff]=useState<TimeOff[]>([]),[shifts,setShifts]=useState<Shift[]>([]),[changes,setChanges]=useState<ChangeReq[]>([]),[claims,setClaims]=useState<Claim[]>([]),[profiles,setProfiles]=useState<ScheduleProfile[]>([]),[requirements,setRequirements]=useState<CoverageRequirement[]>([]),[preview,setPreview]=useState<ScheduleGenerationResult|null>(null),[validationIssues,setValidationIssues]=useState<any[]>([]);
+  const [employees,setEmployees]=useState<Employee[]>([]),[roles,setRoles]=useState<Role[]>([]),[roleAssignments,setRoleAssignments]=useState<RoleAssignment[]>([]),[availability,setAvailability]=useState<AvailabilityRow[]>([]),[temporaryAvailability,setTemporaryAvailability]=useState<TemporaryAvailabilityRow[]>([]),[availDraft,setAvailDraft]=useState<Record<number,AvailabilityDraft>>(()=>availabilityDraft([],null)),[timeOff,setTimeOff]=useState<TimeOff[]>([]),[shifts,setShifts]=useState<Shift[]>([]),[changes,setChanges]=useState<ChangeReq[]>([]),[claims,setClaims]=useState<Claim[]>([]),[profiles,setProfiles]=useState<ScheduleProfile[]>([]),[requirements,setRequirements]=useState<CoverageRequirement[]>([]),[preview,setPreview]=useState<ScheduleGenerationResult|null>(null),[validationIssues,setValidationIssues]=useState<any[]>([]);
   const [editingShiftId,setEditingShiftId]=useState<string|null>(null),[editingVersion,setEditingVersion]=useState<string|null>(null),[shiftForm,setShiftForm]=useState({employee_id:'',role_id:'',starts_at:'',ends_at:'',break_minutes:'0',notes:'',is_locked:false});
   const [offForm,setOffForm]=useState({starts_on:addDateDays(businessDateInZone(),7),ends_on:addDateDays(businessDateInZone(),7),reason:''});
   const [coverageForm,setCoverageForm]=useState({name:'',day_of_week:'1',role_id:'',starts_at:'10:30',ends_at:'21:30',min_staff:'1',target_staff:'1',break_minutes:'0',priority:'50',shift_type:'other' as CoverageRequirement['shift_type']});
@@ -61,20 +61,21 @@ export default function SchedulePage(){
       else {const res=await supabase.from('schedule_periods').select('id,starts_on,ends_on,status,revision,published_at,generated_at').eq('location_id',locationId).eq('starts_on',ws).eq('ends_on',addDateDays(ws,6)).maybeSingle();if(res.error)throw res.error;periodRow=res.data}
       setPeriod(periodRow?{...periodRow,revision:asNum(periodRow.revision)}:null);
       const from=zonedLocalToIso(addDateDays(ws,-14),'00:00:00',s.timezone),to=zonedLocalToIso(addDateDays(ws,15),'00:00:00',s.timezone),fromDay=addDateDays(ws,-14),toDay=addDateDays(ws,60);
-      const [e,r,ra,av,o,sh,c,sp,cr,cl]=await Promise.all([
+      const [e,r,ra,av,tav,o,sh,c,sp,cr,cl]=await Promise.all([
         supabase.from('employees').select('id,full_name,user_id,active').eq('location_id',locationId).is('deleted_at',null).eq('active',true).order('full_name'),
         supabase.from('employee_roles').select('id,name,department').eq('location_id',locationId).order('name'),
-        supabase.from('employee_role_assignments').select('employee_id,role_id'),
+        supabase.from('employee_role_assignments').select('employee_id,role_id,skill_level'),
         supabase.from('employee_availability').select('employee_id,day_of_week,available_from,available_to,unavailable').eq('location_id',locationId),
-        supabase.from('time_off_requests').select('id,employee_id,starts_on,ends_on,reason,status,created_at').eq('location_id',locationId).gte('ends_on',fromDay).lte('starts_on',toDay).order('created_at',{ascending:false}),
+        supabase.from('employee_availability_overrides').select('employee_id,day_of_week,available_from,available_to,unavailable,effective_from,effective_to').eq('location_id',locationId).lte('effective_from',toDay).gte('effective_to',fromDay),
+        supabase.from('time_off_requests').select('id,employee_id,starts_on,ends_on,reason,status,created_at,category,full_day,starts_at_time,ends_at_time').eq('location_id',locationId).gte('ends_on',fromDay).lte('starts_on',toDay).order('created_at',{ascending:false}),
         supabase.from('schedule_shifts').select('id,employee_id,role_id,starts_at,ends_at,break_minutes,status,notes,updated_at,source,is_locked,schedule_period_id,coverage_requirement_id').eq('location_id',locationId).gte('starts_at',from).lt('starts_at',to).neq('status','cancelled').order('starts_at'),
         supabase.from('shift_change_requests').select('id,shift_id,target_shift_id,request_type,requested_by_employee_id,target_employee_id,reason,status,created_at').eq('location_id',locationId).order('created_at',{ascending:false}).limit(100),
         supabase.from('employee_schedule_profiles').select('employee_id,min_weekly_hours,target_weekly_hours,max_weekly_hours,max_shift_hours,min_rest_hours,max_consecutive_days,hourly_rate,avoid_overtime,preferred_days_off,preferred_start,preferred_end,allow_split_shifts,min_split_gap_hours').eq('location_id',locationId),
-        supabase.from('schedule_coverage_requirements').select('id,name,day_of_week,role_id,starts_at,ends_at,min_staff,target_staff,max_staff,break_minutes,priority,shift_type,active,effective_from,effective_to,demand_scalable,department,end_mode,earliest_cut_at,template_key').eq('location_id',locationId).order('day_of_week').order('starts_at'),
+        supabase.from('schedule_coverage_requirements').select('id,name,day_of_week,role_id,starts_at,ends_at,min_staff,target_staff,max_staff,break_minutes,priority,shift_type,active,effective_from,effective_to,demand_scalable,department,end_mode,earliest_cut_at,template_key,required_skill_level').eq('location_id',locationId).order('day_of_week').order('starts_at'),
         supabase.from('shift_claims').select('id,shift_id,employee_id,status,created_at').eq('location_id',locationId).order('created_at',{ascending:false}).limit(100)
       ]);
-      const all=[e,r,ra,av,o,sh,c,sp,cr,cl];if(all.some(x=>x.error))setMessage('Some scheduling data could not be loaded.');
-      const emps=(e.data??[]) as Employee[],avs=(av.data??[]) as AvailabilityRow[];setEmployees(emps);setRoles((r.data??[]) as Role[]);setRoleAssignments((ra.data??[]) as RoleAssignment[]);setAvailability(avs);setTimeOff((o.data??[]) as TimeOff[]);setShifts((sh.data??[]) as Shift[]);setChanges((c.data??[]) as ChangeReq[]);setProfiles((sp.data??[]).map(normalizeProfile));setRequirements((cr.data??[]).map((x:any)=>({...x,day_of_week:asNum(x.day_of_week),min_staff:asNum(x.min_staff),target_staff:asNum(x.target_staff),max_staff:x.max_staff===null?null:asNum(x.max_staff),break_minutes:asNum(x.break_minutes),priority:asNum(x.priority,50)})) as CoverageRequirement[]);setClaims((cl.data??[]) as Claim[]);
+      const all=[e,r,ra,av,tav,o,sh,c,sp,cr,cl];if(all.some(x=>x.error))setMessage('Some scheduling data could not be loaded.');
+      const emps=(e.data??[]) as Employee[],avs=(av.data??[]) as AvailabilityRow[];setEmployees(emps);setRoles((r.data??[]) as Role[]);setRoleAssignments((ra.data??[]) as RoleAssignment[]);setAvailability(avs);setTemporaryAvailability((tav.data??[]) as TemporaryAvailabilityRow[]);setTimeOff((o.data??[]) as TimeOff[]);setShifts((sh.data??[]) as Shift[]);setChanges((c.data??[]) as ChangeReq[]);setProfiles((sp.data??[]).map(normalizeProfile));setRequirements((cr.data??[]).map((x:any)=>({...x,day_of_week:asNum(x.day_of_week),min_staff:asNum(x.min_staff),target_staff:asNum(x.target_staff),max_staff:x.max_staff===null?null:asNum(x.max_staff),break_minutes:asNum(x.break_minutes),priority:asNum(x.priority,50),required_skill_level:asNum(x.required_skill_level,1)})) as CoverageRequirement[]);setClaims((cl.data??[]) as Claim[]);
       const uid=userId||(await supabase.auth.getUser()).data.user?.id||'';const mine=emps.find(x=>x.user_id===uid)||null;setMe(mine);setAvailDraft(availabilityDraft(avs,mine?.id||null));
       resetShiftForm(ws,s.timezone);
     }catch{setMessage('Could not load the schedule workspace.')}finally{setBusy(false)}
@@ -99,7 +100,7 @@ export default function SchedulePage(){
   const openShifts=periodShifts.filter(s=>s.status==='open'&&!s.employee_id&&new Date(s.ends_at)>new Date());
 
   function engineInput():GenerateScheduleInput{
-    if(!period)throw new Error('No schedule period');return {period,employees,roles,roleAssignments,availability,timeOff,profiles,requirements,existingShifts:shifts,settings:{timezone:settings.timezone,overtime_after_hours:settings.overtime_after_hours,mode:settings.auto_schedule_mode,preserve_manual_shifts:true}}
+    if(!period)throw new Error('No schedule period');return {period,employees,roles,roleAssignments,availability,temporaryAvailability,timeOff,profiles,requirements,existingShifts:shifts,settings:{timezone:settings.timezone,overtime_after_hours:settings.overtime_after_hours,mode:settings.auto_schedule_mode,preserve_manual_shifts:true}}
   }
   function previewSchedule(){if(!canManage||!period)return;if(period.status!=='draft'){setMessage('Reopen this schedule before auto-scheduling.');return}try{const x=generateSchedule(engineInput());setPreview(x);setMessage(x.metrics.open_slots?`Draft preview created with ${x.metrics.open_slots} open shift${x.metrics.open_slots===1?'':'s'}.`:'Draft preview created with full algorithmic coverage.')}catch{setMessage('Could not create a schedule preview.')}}
   async function applyPreview(){if(!canManage||!period||!preview||busy)return;setBusy(true);try{const {data,error}=await supabase.rpc('apply_schedule_generation',{p_period_id:period.id,p_expected_revision:period.revision,p_shifts:preview.shifts,p_client_issues:preview.issues,p_metrics:preview.metrics,p_settings:{algorithm_version:preview.algorithm_version,mode:settings.auto_schedule_mode}});if(error)throw error;setMessage(`Auto schedule applied: ${data?.inserted_shifts??preview.shifts.length} generated shifts.`);setPreview(null);await load()}catch(e:any){setMessage(String(e?.message||'').includes('reload')?'The schedule changed on another device. Reloaded the latest version.':'The generated schedule could not be applied because a database safety rule rejected it.');await load()}finally{setBusy(false)}}
