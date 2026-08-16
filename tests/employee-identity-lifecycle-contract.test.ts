@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 
 const migration=readFileSync('docs/database/employee_identity_lifecycle_v2.sql','utf8');
+const grants=readFileSync('docs/database/employee_identity_table_grants_hardening_v2.sql','utf8');
 const guard=readFileSync('app/employee-root-redirect.tsx','utf8');
 const access=readFileSync('app/employee/access/page.tsx','utf8');
 const account=readFileSync('app/account/page.tsx','utf8');
@@ -62,9 +63,10 @@ test('managers re-verify position changes through an auditable request workflow'
   assert.match(migration,/employee_setup/);
 });
 
-test('role and lifecycle request evidence is RPC-only for employee clients',()=>{
+test('role and lifecycle evidence is RPC-only with SELECT-only table privileges',()=>{
   for(const table of ['employee_employment_status_history','employee_role_change_requests','employee_role_change_request_roles','employee_role_assignment_history']){
-    assert.match(migration,new RegExp(`revoke insert,update,delete on public\\.${table} from authenticated`));
+    assert.match(grants,new RegExp(`revoke all on table public\\.${table} from anon,authenticated`));
+    assert.match(grants,new RegExp(`grant select on table public\\.${table} to authenticated`));
   }
   assert.match(migration,/review_employee_role_change_request/);
   assert.match(migration,/set_employee_employment_status/);
