@@ -68,11 +68,13 @@ test('admin backup covers non-AI operational domains through the shared manifest
   assert.match(admin,/Do not use it for restore/);
 });
 
-test('restore remains dry-run only until a transactional restore exists',()=>{
-  assert.match(restore,/Nothing has been written to the database/);
-  assert.match(restore,/No restore button is exposed/);
-  assert.doesNotMatch(restore,/\.insert\(/);
-  assert.doesNotMatch(restore,/\.upsert\(/);
+test('restore is staging-only in the browser and applies through transactional server RPCs',()=>{
+  assert.match(restore,/begin_backup_restore/);
+  assert.match(restore,/preview_backup_restore/);
+  assert.match(restore,/apply_backup_restore/);
+  assert.match(restore,/RESTORE MISSING DATA/);
+  assert.match(restore,/never overwrites an existing row/);
+  assert.doesNotMatch(restore,/supabase\.from\([^)]*\)\.(insert|upsert|update|delete)\(/);
 });
 
 test('root shell uses exact unread counts, protected task writes, rollback-safe uploads, and internal links',()=>{
