@@ -1,0 +1,65 @@
+name: One-time Backup v4 Export Patch
+
+on:
+  push:
+    branches: [backup-recovery-v1]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://asuvgjxdmxizbnjrccsz.supabase.co
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_gtR8VfsQ5n-FPPbypnYKTw_f2k3Xyrk
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: backup-recovery-v1
+      - name: Patch Admin export to shared v4 manifest
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('app/admin/page.tsx')
+          s=p.read_text()
+          old="import { validEmail } from '@/lib/app-hardening';\ntype Profile="
+          new="import { validEmail } from '@/lib/app-hardening';import { BACKUP_EXCLUSIONS,BACKUP_FORMAT,BACKUP_SCHEMA_VERSION,BACKUP_TABLES } from '@/lib/backup-manifest';\ntype Profile="
+          if s.count(old)!=1: raise SystemExit('admin import anchor drifted')
+          s=s.replace(old,new,1)
+          start=";type EventRow={id:string;event_type:string;route:string|null;message:string|null;created_at:string};const BACKUP_TABLES=["
+          i=s.find(start)
+          if i<0: raise SystemExit('old backup table declaration not found')
+          j=s.find(" as const;\nexport default function",i)
+          if j<0: raise SystemExit('old backup table declaration end not found')
+          s=s[:i]+";type EventRow={id:string;event_type:string;route:string|null;message:string|null;created_at:string};\nexport default function"+s[j+len(" as const;\nexport default function"):]
+          old="const out:any={exported_at:new Date().toISOString(),format:'el-molino-ops-backup-v3',location_id:me.location_id,tables:{},errors:[]};"
+          new="const out:any={exported_at:new Date().toISOString(),format:BACKUP_FORMAT,schema_version:BACKUP_SCHEMA_VERSION,location_id:me.location_id,manifest:{tables:[...BACKUP_TABLES],excluded:BACKUP_EXCLUSIONS},tables:{},errors:[]};"
+          if s.count(old)!=1: raise SystemExit('old backup envelope not found')
+          s=s.replace(old,new,1)
+          old="'Backup downloaded successfully.'"
+          new="`Backup downloaded successfully. ${BACKUP_TABLES.length} recovery tables captured; credential/runtime exclusions are recorded in the manifest.`"
+          if s.count(old)!=1: raise SystemExit('backup success text not found')
+          s=s.replace(old,new,1)
+          old='<button className="btn" disabled={busy} onClick={exportBackup}><Download/> Export all accessible app data</button>'
+          new='<div className="row-actions"><button className="btn" disabled={busy} onClick={exportBackup}><Download/> Export recovery backup</button><a className="btn secondary" href="/admin/restore">Restore backup</a></div>'
+          if s.count(old)!=1: raise SystemExit('backup button anchor drifted')
+          s=s.replace(old,new,1)
+          p.write_text(s)
+          PY
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+      - run: npx tsc --noEmit
+      - name: Commit verified export patch
+        run: |
+          git config user.name "El Molino Ops CI"
+          git config user.email "theitaliancouplellc@gmail.com"
+          git add app/admin/page.tsx
+          git commit -m "Use complete v4 backup manifest for export"
+          git push origin backup-recovery-v1
