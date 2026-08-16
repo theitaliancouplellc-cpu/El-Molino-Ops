@@ -67,8 +67,8 @@ export default function EmployeeHome(){
    <a className={styles.card} href="/schedule/requests"><Clock3/><b>Availability & Time Off</b><small>Set availability and submit time-off requests.</small></a>
    <a className={styles.card} href="/team"><MessageSquare/><b>Team Hub</b><small>Announcements, recognition and team communication.</small></a>
    <a className={styles.card} href="/training/courses"><GraduationCap/><b>Training</b><small>Your assigned courses, quizzes and completion progress.</small></a>
-   <a className={styles.card} href="/time-clock"><Clock3/><b>Time Clock</b><small>Your clock status, punches and attestations.</small></a>
-   <a className={styles.card} href="/tips"><Coins/><b>My Tips</b><small>Your finalized tip information when available.</small></a>
+   <a className={styles.card} href="/employee/time-clock"><Clock3/><b>Time Clock</b><small>Your clock status, punches and attestations.</small></a>
+   <a className={styles.card} href="/employee/tips"><Coins/><b>My Tips</b><small>Your finalized tip information when available.</small></a>
    <a className={styles.card} href="/account"><UserRound/><b>My Account</b><small>Profile, security, verified roles and preferences.</small></a>
   </div></section>
   <section className={styles.section}><div className={styles.sectionHead}><h2>Notifications</h2><a className={styles.sectionLink} href="/employee/notifications">See all · {unread} unread</a></div>{notices.length?<div className={styles.list}>{notices.slice(0,6).map(n=><button className={`${styles.row} ${!n.read_at?styles.notificationUnread:''}`} key={n.id} onClick={()=>openNotice(n)}>{!n.read_at?<span className={styles.dot}/>:<Bell size={17}/>}<span className={styles.rowMain}><b>{n.title}</b><small>{n.body||notificationTimeLabel(n.created_at)}</small></span><ChevronRight size={17}/></button>)}</div>:<div className={styles.empty}>No notifications yet. Schedule updates and staff decisions will appear here.</div>}</section>
