@@ -1,0 +1,142 @@
+name: One-time 7shifts Parity UI Integration
+
+on:
+  push:
+    branches: [scheduling-7shifts-parity]
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://asuvgjxdmxizbnjrccsz.supabase.co
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_gtR8VfsQ5n-FPPbypnYKTw_f2k3Xyrk
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: scheduling-7shifts-parity
+      - name: Integrate parity tools into Schedule
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          # Segmented-shift coverage in browser optimizer.
+          p=Path('lib/scheduling-engine.ts');s=p.read_text()
+          marker="function covers(shift:ExistingShift,slot:Slot){return shift.role_id===slot.requirement.role_id&&shift.employee_id!==null&&ACTIVE_STATUSES.has(shift.status)&&new Date(shift.starts_at)<=new Date(slot.starts_at)&&new Date(shift.ends_at)>=new Date(slot.ends_at)}\n"
+          helper=marker+"""export function minimumCoverageCountForShifts(shifts:ExistingShift[],roleId:string,startsAt:string,endsAt:string){const start=new Date(startsAt).getTime(),end=new Date(endsAt).getTime();const relevant=shifts.filter(s=>s.role_id===roleId&&s.employee_id!==null&&ACTIVE_STATUSES.has(s.status)&&new Date(s.starts_at).getTime()<end&&new Date(s.ends_at).getTime()>start);const boundaries=[start,end,...relevant.flatMap(s=>[Math.max(start,new Date(s.starts_at).getTime()),Math.min(end,new Date(s.ends_at).getTime())])].filter((v,i,a)=>a.indexOf(v)===i).sort((a,b)=>a-b);if(boundaries.length<2)return 0;let minimum=Infinity;for(let i=0;i<boundaries.length-1;i++){const a=boundaries[i],b=boundaries[i+1];if(b<=a)continue;const count=relevant.filter(s=>new Date(s.starts_at).getTime()<=a&&new Date(s.ends_at).getTime()>=b).length;minimum=Math.min(minimum,count)}return Number.isFinite(minimum)?minimum:0}\n"""
+          if 'minimumCoverageCountForShifts' not in s:
+              if marker not in s: raise SystemExit('covers marker missing')
+              s=s.replace(marker,helper,1)
+          s=s.replace("const already=existing.filter(s=>covers(s,base)).length;","const already=minimumCoverageCountForShifts(existing,r.role_id,base.starts_at,base.ends_at);")
+          p.write_text(s)
+
+          # Main Schedule UI.
+          p=Path('app/schedule/page.tsx');s=p.read_text()
+          s=s.replace("addDateDays,dateDayOfWeek,generateSchedule,shiftNetHours,zonedLocalToIso,","addDateDays,dateDayOfWeek,generateSchedule,minimumCoverageCountForShifts,shiftNetHours,zonedLocalToIso,")
+          s=s.replace("type Claim={id:string;shift_id:string;employee_id:string;status:string;created_at:string};","type Claim={id:string;shift_id:string;employee_id:string;status:string;created_at:string};\ntype ScheduledBreak={id:string;shift_id:string;starts_at:string;duration_minutes:number;paid:boolean;status:string};\ntype DeptPub={department:string;status:string};")
+          s=s.replace("auto_schedule_mode:'minimum'|'target'};","auto_schedule_mode:'minimum'|'target';shift_pool_allow_partial:boolean};")
+          s=s.replace("auto_schedule_mode:'target'};","auto_schedule_mode:'target',shift_pool_allow_partial:false};")
+          s=s.replace("[requirements,setRequirements]=useState<CoverageRequirement[]>([]),[preview", "[requirements,setRequirements]=useState<CoverageRequirement[]>([]),[scheduledBreaks,setScheduledBreaks]=useState<ScheduledBreak[]>([]),[departmentPubs,setDepartmentPubs]=useState<DeptPub[]>([]),[preview")
+          s=s.replace("shift_type:'other' as CoverageRequirement['shift_type']});","shift_type:'other' as CoverageRequirement['shift_type'],required_skill_level:'1'});")
+          s=s.replace("open_shift_claim_requires_approval,auto_schedule_mode').eq", "open_shift_claim_requires_approval,auto_schedule_mode,shift_pool_allow_partial').eq")
+          s=s.replace("open_shift_claim_requires_approval:sett.data.open_shift_claim_requires_approval!==false,auto_schedule_mode:sett.data.auto_schedule_mode==='minimum'?'minimum':'target'}", "open_shift_claim_requires_approval:sett.data.open_shift_claim_requires_approval!==false,auto_schedule_mode:sett.data.auto_schedule_mode==='minimum'?'minimum':'target',shift_pool_allow_partial:sett.data.shift_pool_allow_partial===true}")
+
+          # Load structured breaks and department publication state after main batch.
+          target="const uid=userId||(await supabase.auth.getUser()).data.user?.id||'';const mine=emps.find(x=>x.user_id===uid)||null;setMe(mine);setAvailDraft(availabilityDraft(avs,mine?.id||null));"
+          replacement="const br=await supabase.from('schedule_shift_breaks').select('id,shift_id,starts_at,duration_minutes,paid,status').eq('location_id',locationId).gte('starts_at',from).lt('starts_at',to);setScheduledBreaks((br.data??[]) as ScheduledBreak[]);const dp=periodRow?await supabase.from('schedule_department_publications').select('department,status').eq('schedule_period_id',periodRow.id):null;setDepartmentPubs((dp?.data??[]) as DeptPub[]);\n      "+target
+          if target not in s: raise SystemExit('load tail marker missing')
+          s=s.replace(target,replacement,1)
+
+          # Segmented coverage map.
+          old="const matching=periodShifts.filter(s=>s.role_id===req.role_id&&new Date(s.starts_at)<=new Date(st)&&new Date(s.ends_at)>=new Date(en));out.push({date,req,assigned:matching.filter(s=>s.employee_id&&activeStatus(s.status)).length,open:matching.filter(s=>s.status==='open').length})"
+          new="const matching=periodShifts.filter(s=>s.role_id===req.role_id&&new Date(s.starts_at)<new Date(en)&&new Date(s.ends_at)>new Date(st));out.push({date,req,assigned:minimumCoverageCountForShifts(periodShifts,req.role_id,st,en),open:matching.filter(s=>s.status==='open').length})"
+          if old not in s: raise SystemExit('coverage map marker missing')
+          s=s.replace(old,new,1)
+
+          # Availability approval-aware legacy shortcut.
+          old="const {error}=await supabase.rpc('set_my_weekly_availability',{p_rows:rows});if(error)setMessage('Could not save weekly availability.');else{setMessage('Weekly availability saved.');await load()}"
+          new="const {data,error}=await supabase.rpc('set_my_weekly_availability',{p_rows:rows});if(error)setMessage('Could not save weekly availability.');else{setMessage(data===-1?'Availability request sent for manager approval.':'Weekly availability saved.');await load()}"
+          s=s.replace(old,new,1)
+
+          # Role skill RPCs.
+          pattern=r"async function toggleRole\(employeeId:string,roleId:string\)\{.*?\}\n\n  async function applyApprovedFohTemplate"
+          replacement="""async function toggleRole(employeeId:string,roleId:string){if(!canManage||busy)return;setBusy(true);const has=roleSet.has(`${employeeId}:${roleId}`);const res=has?await supabase.rpc('remove_employee_role_qualification',{p_employee_id:employeeId,p_role_id:roleId}):await supabase.rpc('set_employee_role_skill',{p_employee_id:employeeId,p_role_id:roleId,p_skill_level:1});if(res.error)setMessage('Could not update that role qualification.');else{setMessage('Role qualification updated.');await load()}setBusy(false)}\n  function roleSkill(employeeId:string,roleId:string){return roleAssignments.find(x=>x.employee_id===employeeId&&x.role_id===roleId)?.skill_level??1}\n  async function setRoleSkill(employeeId:string,roleId:string,level:number){if(!canManage||busy)return;setBusy(true);const {error}=await supabase.rpc('set_employee_role_skill',{p_employee_id:employeeId,p_role_id:roleId,p_skill_level:level});setMessage(error?error.message:'Role skill level saved.');await load();setBusy(false)}\n\n  async function applyApprovedFohTemplate"""
+          s,n=re.subn(pattern,replacement,s,count=1,flags=re.S)
+          if n!=1: raise SystemExit('role function replacement failed')
+
+          # Coverage required skill.
+          s=s.replace("shift_type:coverageForm.shift_type});","shift_type:coverageForm.shift_type,required_skill_level:asNum(coverageForm.required_skill_level,1)});")
+          form_marker='<Field label="Priority"><input type="number" min="1" max="100" value={coverageForm.priority} onChange={e=>setCoverageForm({...coverageForm,priority:e.target.value})}/></Field>'
+          if form_marker in s and 'Required skill level' not in s:
+              s=s.replace(form_marker,'<Field label="Required skill level"><select value={coverageForm.required_skill_level} onChange={e=>setCoverageForm({...coverageForm,required_skill_level:e.target.value})}><option value="1">1 — New / basic</option><option value="2">2</option><option value="3">3 — Proficient</option><option value="4">4</option><option value="5">5 — Expert</option></select></Field>'+form_marker,1)
+          s=s.replace("· priority {r.priority}</small>","· skill {r.required_skill_level??1}+ · priority {r.priority}</small>")
+
+          # Partial/full Offer Up.
+          pattern=r"async function offerShiftToPool\(s:Shift\)\{.*?\}\n\n  async function submitSwap"
+          replacement="""async function offerShiftToPool(s:Shift,partial=false){if(!me||s.employee_id!==me.id||busy)return;const published=period?.status==='published'||departmentPubs.some(d=>d.status==='published'&&d.department===(roles.find(r=>r.id===s.role_id)?.department||'other'));if(!published)return;let offeredStart:string|null=null,offeredEnd:string|null=null;if(partial){const start=prompt('Partial shift starts at (edit if needed):',localInput(s.starts_at,settings.timezone));if(!start)return;const end=prompt('Partial shift ends at:',localInput(s.ends_at,settings.timezone));if(!end)return;try{offeredStart=formIso(start,settings.timezone);offeredEnd=formIso(end,settings.timezone)}catch{setMessage('Choose valid partial-shift times.');return}if(new Date(offeredStart)<new Date(s.starts_at)||new Date(offeredEnd)>new Date(s.ends_at)||new Date(offeredEnd)<=new Date(offeredStart)){setMessage('Partial offer must stay inside your assigned shift.');return}}const comment=prompt('Optional note for coworkers about this shift:')||'';if(!confirm(`Put ${partial?'this part of':'this'} shift up for grabs? You remain responsible until another employee is approved and the schedule is reassigned.`))return;setBusy(true);const {error}=await supabase.rpc('offer_my_shift_to_pool',{p_shift_id:s.id,p_comment:comment.trim().slice(0,2000)||null,p_recipient_employee_ids:null,p_offered_starts_at:offeredStart,p_offered_ends_at:offeredEnd});if(error)setMessage(error.message.includes('already up for grabs')?'This shift is already up for grabs. Open Shift Pool to view its bids.':error.message);else{setMessage('Shift is up for grabs. You are still responsible until a replacement is approved.');location.href='/schedule/pool'}setBusy(false)}\n\n  async function submitSwap"""
+          s,n=re.subn(pattern,replacement,s,count=1,flags=re.S)
+          if n!=1: raise SystemExit('offer function replacement failed')
+
+          # Tool hub.
+          msg="{message&&<div className={message.startsWith('Could not')||message.startsWith('The generated')?styles.error:styles.notice}>{message}</div>}"
+          hub=msg+"""\n    <section className={styles.section}><div className={styles.card}><h2>Schedule tools</h2><div className={styles.actions}><Link className={styles.button} href=\"/schedule/pool\">Shift Pool</Link><Link className={`${styles.button} ${styles.secondary}`} href=\"/schedule/requests\">Availability & Time Off</Link><Link className={`${styles.button} ${styles.secondary}`} href=\"/schedule/views\">Views</Link><Link className={`${styles.button} ${styles.secondary}`} href=\"/schedule/feedback\">Shift Feedback</Link>{canManage&&<><Link className={`${styles.button} ${styles.secondary}`} href=\"/schedule/warnings\">Warnings & Quick Fix</Link><Link className={`${styles.button} ${styles.secondary}`} href=\"/schedule/breaks\">Breaks</Link><Link className={`${styles.button} ${styles.secondary}`} href=\"/schedule/publish\">Publish Center</Link><Link className={`${styles.button} ${styles.secondary}`} href=\"/schedule/settings\">Settings</Link></>}</div></div></section>"""
+          if msg not in s: raise SystemExit('message marker missing')
+          s=s.replace(msg,hub,1)
+
+          # Main publish semantics and links.
+          s=s.replace("<button className={styles.button} disabled={busy} onClick={publishPeriod}>Publish Schedule</button>","<button className={styles.button} disabled={busy} onClick={publishPeriod}>Publish Entire Schedule</button><Link className={`${styles.button} ${styles.secondary}`} href=\"/schedule/publish\">Publish Center</Link>")
+
+          # Skill controls in employee profiles.
+          old="{roles.map(r=><label key={r.id} style={{display:'inline-flex',gap:6,alignItems:'center',marginRight:14}}><input type=\"checkbox\" checked={roleSet.has(`${e.id}:${r.id}`)} onChange={()=>toggleRole(e.id,r.id)}/>{r.name}</label>)}"
+          new="{roles.map(r=>{const assigned=roleSet.has(`${e.id}:${r.id}`);return <div key={r.id} style={{display:'inline-flex',gap:6,alignItems:'center',marginRight:14,marginBottom:8}}><label style={{display:'inline-flex',gap:6,alignItems:'center'}}><input type=\"checkbox\" checked={assigned} onChange={()=>toggleRole(e.id,r.id)}/>{r.name}</label>{assigned&&<select aria-label={`${r.name} skill level`} value={roleSkill(e.id,r.id)} onChange={x=>setRoleSkill(e.id,r.id,asNum(x.target.value,1))}><option value=\"1\">Skill 1</option><option value=\"2\">Skill 2</option><option value=\"3\">Skill 3</option><option value=\"4\">Skill 4</option><option value=\"5\">Skill 5</option></select>}</div>})}"
+          if old not in s: raise SystemExit('role controls marker missing')
+          s=s.replace(old,new,1)
+
+          # Break display and department-published actions.
+          notes_marker="{s.notes&&<div className={styles.details}>{detail('Notes',s.notes)}</div>}"
+          breaks_expr=notes_marker+"{scheduledBreaks.filter(b=>b.shift_id===s.id).length>0&&<div className={styles.details}>{scheduledBreaks.filter(b=>b.shift_id===s.id).map(b=><div className={styles.detail} key={b.id}><b>{b.paid?'Paid break':'Unpaid break'}</b><span>{localInput(b.starts_at,settings.timezone).slice(11)} · {b.duration_minutes} min · {b.status}</span></div>)}</div>}"
+          s=s.replace(notes_marker,breaks_expr,1)
+          old_actions="{me&&s.employee_id===me.id&&period?.status==='published'&&!changes.some(c=>c.shift_id===s.id&&c.status==='pending')&&<div className={styles.actions}><button className={styles.button} disabled={busy} onClick={()=>offerShiftToPool(s)}>Offer Up</button><button className={`${styles.button} ${styles.secondary}`} disabled={busy} onClick={()=>requestCoverage(s)}>Manager Coverage</button><button className={`${styles.button} ${styles.secondary}`} disabled={busy} onClick={()=>{setSwapSource(s.id);setSwapTarget('')}}>Trade Shift</button></div>}"
+          new_actions="{me&&s.employee_id===me.id&&(period?.status==='published'||departmentPubs.some(d=>d.status==='published'&&d.department===(roles.find(r=>r.id===s.role_id)?.department||'other')))&&!changes.some(c=>c.shift_id===s.id&&c.status==='pending')&&<div className={styles.actions}><button className={styles.button} disabled={busy} onClick={()=>offerShiftToPool(s,false)}>Offer Up</button>{settings.shift_pool_allow_partial&&<button className={`${styles.button} ${styles.secondary}`} disabled={busy} onClick={()=>offerShiftToPool(s,true)}>Offer Part</button>}<button className={`${styles.button} ${styles.secondary}`} disabled={busy} onClick={()=>requestCoverage(s)}>Manager Coverage</button><button className={`${styles.button} ${styles.secondary}`} disabled={busy} onClick={()=>{setSwapSource(s.id);setSwapTarget('')}}>Trade Shift</button></div>}"
+          if old_actions not in s: raise SystemExit('shift actions marker missing')
+          s=s.replace(old_actions,new_actions,1)
+          s=s.replace("me&&s.status==='open'&&period?.status==='published'", "me&&s.status==='open'&&(period?.status==='published'||departmentPubs.some(d=>d.status==='published'&&d.department===(roles.find(r=>r.id===s.role_id)?.department||'other')))")
+          p.write_text(s)
+
+          # Settings page: enable partial toggle now that segmented shifts are supported.
+          p=Path('app/schedule/settings/page.tsx');s=p.read_text()
+          s=s.replace("shift_pool_enabled:boolean;shift_pool_requires_approval:boolean;shift_pool_allow_trades:boolean;", "shift_pool_enabled:boolean;shift_pool_requires_approval:boolean;shift_pool_allow_partial:boolean;shift_pool_allow_trades:boolean;")
+          s=s.replace("shift_pool_enabled:true,shift_pool_requires_approval:true,shift_pool_allow_trades:true,", "shift_pool_enabled:true,shift_pool_requires_approval:true,shift_pool_allow_partial:false,shift_pool_allow_trades:true,")
+          s=s.replace("shift_pool_enabled,shift_pool_requires_approval,shift_pool_allow_trades", "shift_pool_enabled,shift_pool_requires_approval,shift_pool_allow_partial,shift_pool_allow_trades")
+          old_notice='<Bool label="Manager approval for offered-shift bids">{toggle(\'shift_pool_requires_approval\')}</Bool><Bool label="Allow direct shift trades">{toggle(\'shift_pool_allow_trades\')}</Bool>'
+          new_notice='<Bool label="Manager approval for offered-shift bids">{toggle(\'shift_pool_requires_approval\')}</Bool><Bool label="Allow partial-shift offers">{toggle(\'shift_pool_allow_partial\')}</Bool><Bool label="Allow direct shift trades">{toggle(\'shift_pool_allow_trades\')}</Bool>'
+          s=s.replace(old_notice,new_notice,1)
+          s=s.replace('<div className={styles.notice} style={{marginTop:12}}>Partial-shift offers stay disabled until segmented-shift coverage is fully enabled and validated. Full-shift offers, bids, take-backs, open shifts, and trades are active.</div>','<div className={styles.notice} style={{marginTop:12}}>Partial offers split an approved shift into real retained/transferred segments. Scheduled break boundaries and continuous coverage are validated before approval.</div>')
+          p.write_text(s)
+
+          # Permanent regression contracts.
+          t=Path('tests/scheduling-segmented-coverage.test.ts')
+          t.write_text("""import test from 'node:test';\nimport assert from 'node:assert/strict';\nimport {generateSchedule,minimumCoverageCountForShifts,type GenerateScheduleInput} from '../lib/scheduling-engine';\nconst shifts:any[]=[{id:'a',employee_id:'e1',role_id:'server',starts_at:'2026-08-17T14:00:00.000Z',ends_at:'2026-08-17T20:00:00.000Z',break_minutes:0,status:'scheduled',source:'manual'},{id:'b',employee_id:'e2',role_id:'server',starts_at:'2026-08-17T20:00:00.000Z',ends_at:'2026-08-18T02:00:00.000Z',break_minutes:0,status:'covered',source:'shift_pool'}];\ntest('segmented shifts count as continuous coverage',()=>{assert.equal(minimumCoverageCountForShifts(shifts,'server','2026-08-17T14:00:00.000Z','2026-08-18T02:00:00.000Z'),1)});\ntest('optimizer does not duplicate a requirement already covered by contiguous segments',()=>{const input:GenerateScheduleInput={period:{id:'p',starts_on:'2026-08-17',ends_on:'2026-08-23',revision:0,status:'draft'},employees:[{id:'e1',full_name:'A',active:true},{id:'e2',full_name:'B',active:true}],roles:[{id:'server',name:'Server'}],roleAssignments:[{employee_id:'e1',role_id:'server'},{employee_id:'e2',role_id:'server'}],availability:[],temporaryAvailability:[],timeOff:[],profiles:[],requirements:[{id:'r',name:'Server day',day_of_week:1,role_id:'server',starts_at:'10:00',ends_at:'22:00',min_staff:1,target_staff:1,max_staff:1,break_minutes:0,priority:50,shift_type:'opening',active:true,effective_from:null,effective_to:null}],existingShifts:shifts,settings:{timezone:'America/New_York',overtime_after_hours:40,mode:'target',preserve_manual_shifts:true}};assert.equal(generateSchedule(input).metrics.requested_slots,0)});\n""")
+          c=Path('tests/scheduling-parity-ui-contract.test.ts')
+          c.write_text("""import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';\nconst s=readFileSync('app/schedule/page.tsx','utf8'),settings=readFileSync('app/schedule/settings/page.tsx','utf8');\ntest('schedule links all parity workspaces',()=>{for(const path of ['/schedule/pool','/schedule/requests','/schedule/views','/schedule/feedback','/schedule/warnings','/schedule/breaks','/schedule/publish','/schedule/settings'])assert.ok(s.includes(path),path)});\ntest('schedule exposes skill levels partial offers and scheduled breaks',()=>{assert.match(s,/set_employee_role_skill/);assert.match(s,/Offer Part/);assert.match(s,/scheduledBreaks/);assert.match(settings,/shift_pool_allow_partial/)});\n""")
+          PY
+      - name: Verify full parity surface
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+          npx tsc --noEmit
+          npm run build
+          npm run cf:build
+          npx wrangler deploy --dry-run
+      - name: Commit verified integration
+        run: |
+          git config user.name "El Molino Ops CI"
+          git config user.email "theitaliancouplellc@gmail.com"
+          git add lib/scheduling-engine.ts app/schedule/page.tsx app/schedule/settings/page.tsx tests/scheduling-segmented-coverage.test.ts tests/scheduling-parity-ui-contract.test.ts
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Integrate 7shifts parity tools into Schedule"
+          git push origin HEAD:scheduling-7shifts-parity
