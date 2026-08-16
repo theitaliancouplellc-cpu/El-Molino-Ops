@@ -35,6 +35,14 @@ test('tips UI makes negative corrections explicit adjustments',()=>{
   assert.match(tips,/value="adjustment"/);
 });
 
+test('initial manager wage loading does not depend on stale React profile state',()=>{
+  assert.match(clock,/async function loadWages\(periodId=selectedPeriod,only=approvedOnly\)\{if\(!periodId\)return;/);
+});
+
+test('newly ensured tip run remains selected after data refresh',()=>{
+  assert.match(tips,/await load\(\);setSelectedRun\(row\.id\)/);
+});
+
 test('Tools exposes time clock and tips',()=>{
   assert.match(tools,/href:'\/time-clock'/);
   assert.match(tools,/href:'\/tips'/);
