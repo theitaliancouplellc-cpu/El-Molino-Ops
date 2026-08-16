@@ -1,0 +1,70 @@
+name: One-time Time Clock Platform
+
+on:
+  push:
+    branches: [7shifts-platform-parity]
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://asuvgjxdmxizbnjrccsz.supabase.co
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_gtR8VfsQ5n-FPPbypnYKTw_f2k3Xyrk
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 7shifts-platform-parity
+      - name: Add Time Clock to Ops navigation
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('app/page.tsx')
+          s=p.read_text()
+          marker='<a className="settings-row" href="/schedule"><span className="settings-icon"><Users/></span><span><b>Schedule</b><small>Shifts, time off, call-outs and coverage</small></span><ChevronRight/></a>'
+          addition=marker+'<a className="settings-row" href="/time-clock"><span className="settings-icon"><Activity/></span><span><b>Time Clock</b><small>Punches, breaks, approvals and worked hours</small></span><ChevronRight/></a>'
+          if 'href="/time-clock"' not in s:
+              if marker not in s: raise SystemExit('Schedule navigation marker missing')
+              s=s.replace(marker,addition,1)
+          p.write_text(s)
+          PY
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Run full tests
+        run: npm test
+      - name: Type check
+        run: npx tsc --noEmit
+      - name: Production build
+        run: npm run build
+      - name: Build Cloudflare OpenNext worker
+        run: npm run cf:build
+      - name: Validate Cloudflare worker bundle
+        run: npx wrangler deploy --dry-run --outdir /tmp/cloudflare-dry-run
+      - name: Smoke test Cloudflare workerd runtime
+        run: |
+          npx wrangler dev --local --port 8787 > /tmp/wrangler.log 2>&1 &
+          for i in {1..60}; do
+            if curl -fsS http://127.0.0.1:8787/api/health > /tmp/health.json; then break; fi
+            sleep 1
+          done
+          test -s /tmp/health.json || { cat /tmp/wrangler.log; exit 1; }
+          node -e "const h=require('/tmp/health.json'); if(!h.ok || !h.checks?.filter(c=>c.required).every(c=>c.ok)) process.exit(1)"
+          curl -fsS http://127.0.0.1:8787/ > /tmp/root.html
+          grep -q 'El Molino Ops' /tmp/root.html
+      - name: Commit verified navigation integration
+        run: |
+          git config user.name "El Molino Ops CI"
+          git config user.email "theitaliancouplellc@gmail.com"
+          git add app/page.tsx
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Expose Time Clock from Ops navigation"
+          git push origin HEAD:7shifts-platform-parity
