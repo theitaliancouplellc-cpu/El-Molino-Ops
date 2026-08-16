@@ -1,0 +1,39 @@
+name: One-time Schedule Source Patch
+
+on:
+  push:
+    branches: [scheduling-v2-engine]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: scheduling-v2-engine
+      - name: Apply exact source patch
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('app/schedule/optimizer/page.tsx')
+          s=p.read_text()
+          old="await load(pr.location_id,ws);setReady(true)"
+          new="await load(pr.location_id!,ws);setReady(true)"
+          if old in s:
+              s=s.replace(old,new,1)
+              p.write_text(s)
+              print('patched optimizer nullability')
+          else:
+              print('patch already applied')
+          PY
+      - name: Commit patch if changed
+        run: |
+          if git diff --quiet; then exit 0; fi
+          git config user.name "El Molino Ops CI"
+          git config user.email "theitaliancouplellc@gmail.com"
+          git add app/schedule/optimizer/page.tsx
+          git commit -m "Fix optimizer location type narrowing [schedule-source-patched]"
+          git push origin HEAD:scheduling-v2-engine
