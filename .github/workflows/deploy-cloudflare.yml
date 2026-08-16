@@ -1,0 +1,81 @@
+name: Deploy El Molino Ops to Cloudflare
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://asuvgjxdmxizbnjrccsz.supabase.co
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_gtR8VfsQ5n-FPPbypnYKTw_f2k3Xyrk
+    steps:
+      - name: Checkout certified source
+        uses: actions/checkout@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run release gates
+        run: |
+          npx tsc --noEmit
+          npm test
+
+      - name: Build Cloudflare OpenNext worker
+        run: npm run cf:build
+
+      - name: Deploy production Worker
+        id: cloudflare
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy
+          packageManager: npm
+
+      - name: Smoke test deployed Worker
+        env:
+          DEPLOYMENT_URL: ${{ steps.cloudflare.outputs.deployment-url }}
+        run: |
+          test -n "$DEPLOYMENT_URL"
+          echo "Deployment URL: $DEPLOYMENT_URL"
+          for i in {1..30}; do
+            if curl -fsS "$DEPLOYMENT_URL/api/health" > /tmp/health.json; then
+              break
+            fi
+            sleep 2
+          done
+          test -s /tmp/health.json
+          cat /tmp/health.json
+          node -e "const h=require('/tmp/health.json'); if(!h.ok || !h.checks?.filter(c=>c.required).every(c=>c.ok)) process.exit(1)"
+          curl -fsS "$DEPLOYMENT_URL/" | grep -q 'El Molino Ops'
+
+      - name: Publish deployment summary
+        env:
+          DEPLOYMENT_URL: ${{ steps.cloudflare.outputs.deployment-url }}
+        run: |
+          {
+            echo '## Cloudflare production deployment'
+            echo
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Worker: \`el-molino-ops\`"
+            echo "- URL: ${DEPLOYMENT_URL}"
+            echo '- Health check: PASS'
+          } >> "$GITHUB_STEP_SUMMARY"
