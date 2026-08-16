@@ -13,6 +13,7 @@ const changes=readFileSync('docs/database/employee_shift_change_workflow_v5_2.sq
 const candidateFix=readFileSync('docs/database/staff_trade_candidates_ambiguity_fix_v5_2_1.sql','utf8');
 const tradeSnapshot=readFileSync('docs/database/employee_shift_pool_trade_snapshot_v5_2_2.sql','utf8');
 const tradeEligibility=readFileSync('docs/database/employee_trade_eligibility_v5_3.sql','utf8');
+const tradeReview=readFileSync('docs/database/employee_trade_review_revalidation_v5_3_1.sql','utf8');
 
 test('employee Home uses authoritative priority and Shift Pool snapshots',()=>{
  assert.match(home,/employee_home_priority_snapshot/);
@@ -78,8 +79,10 @@ test('reciprocal trade eligibility covers both employees, availability, rest and
  for(const code of ['role','time_off','overlap','availability','max_shift','rest','max_hours','overtime'])assert.match(tradeEligibility,new RegExp(`'${code}'`));
  assert.match(tradeEligibility,/employee_trade_candidate_warnings\(eid,src\.id,t\.id\)/);
  assert.match(tradeEligibility,/employee_trade_candidate_warnings\(t\.employee_id,t\.id,src\.id\)/);
- assert.match(tradeEligibility,/review_shift_change_request was also hardened in production to rerun employee_trade_candidate_warnings/);
  assert.match(tradeEligibility,/revoke execute on function public\.employee_trade_candidate_warnings\(uuid,uuid,uuid\) from authenticated,anon,public/);
+ assert.match(tradeReview,/employee_trade_candidate_warnings\(a\.employee_id,a\.id,b\.id\)/);
+ assert.match(tradeReview,/employee_trade_candidate_warnings\(b\.employee_id,b\.id,a\.id\)/);
+ assert.match(tradeReview,/trade can no longer be approved because eligibility changed/);
 });
 
 test('Shift Pool snapshot is current-employee scoped and precomputes pickup warnings',()=>{
