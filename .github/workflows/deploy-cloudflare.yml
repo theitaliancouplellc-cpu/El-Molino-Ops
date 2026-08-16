@@ -70,17 +70,7 @@ jobs:
 
           node -e "const kib=Number(process.argv[1]); const freeLimit=3*1000*1000/1024; if(!Number.isFinite(kib)||kib>freeLimit){console.error('Worker exceeds Cloudflare Workers Free 3 MB gzip limit:',kib,'KiB');process.exit(1)} console.log('Worker gzip size:',kib,'KiB; Cloudflare Workers Free limit:',freeLimit.toFixed(2),'KiB')" "$gzip_kib"
 
-      - name: Deploy production Worker
-        id: cloudflare
-        if: ${{ env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' }}
-        uses: cloudflare/wrangler-action@v4
-        with:
-          apiToken: ${{ env.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
-          command: deploy
-          packageManager: npm
-
-      - name: Record authenticated deployment requirement
+      - name: Require authenticated Cloudflare production credentials
         if: ${{ env.CLOUDFLARE_API_TOKEN == '' || env.CLOUDFLARE_ACCOUNT_ID == '' }}
         env:
           WORKER_GZIP_KIB: ${{ steps.limits.outputs.worker-gzip-kib }}
@@ -88,7 +78,7 @@ jobs:
           LARGEST_ASSET_BYTES: ${{ steps.limits.outputs.largest-asset-bytes }}
         run: |
           {
-            echo '## Cloudflare production preflight'
+            echo '## Cloudflare production deployment BLOCKED'
             echo
             echo "- Commit: \`${GITHUB_SHA}\`"
             echo "- Worker: \`el-molino-ops\`"
@@ -97,14 +87,26 @@ jobs:
             echo "- Worker gzip: ${WORKER_GZIP_KIB} KiB (Free limit: 3 MB)"
             echo "- Largest asset: \`${LARGEST_ASSET_PATH}\` (${LARGEST_ASSET_BYTES} bytes; limit: 25 MiB)"
             echo '- Production package limits: PASS'
-            echo '- Publish: READY — authenticated Cloudflare account required'
+            echo '- Publish: BLOCKED — GitHub Actions is missing CLOUDFLARE_API_TOKEN and/or CLOUDFLARE_ACCOUNT_ID'
+            echo '- This workflow fails closed so a skipped publish can never be reported as a successful production deployment.'
           } >> "$GITHUB_STEP_SUMMARY"
+          echo 'Cloudflare production deployment credentials are missing. Failing closed.' >&2
+          exit 1
+
+      - name: Deploy production Worker
+        id: cloudflare
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ env.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy
+          packageManager: npm
 
       - name: Smoke test deployed Worker
-        if: ${{ steps.cloudflare.outcome == 'success' }}
         env:
           DEPLOYMENT_URL: ${{ steps.cloudflare.outputs.deployment-url }}
         run: |
+          set -euo pipefail
           test -n "$DEPLOYMENT_URL"
           echo "Deployment URL: $DEPLOYMENT_URL"
           for i in {1..30}; do
@@ -119,7 +121,6 @@ jobs:
           curl -fsS "$DEPLOYMENT_URL/" | grep -q 'El Molino Ops'
 
       - name: Publish production deployment summary
-        if: ${{ steps.cloudflare.outcome == 'success' }}
         env:
           DEPLOYMENT_URL: ${{ steps.cloudflare.outputs.deployment-url }}
           WORKER_GZIP_KIB: ${{ steps.limits.outputs.worker-gzip-kib }}
@@ -132,4 +133,5 @@ jobs:
             echo "- Worker gzip: ${WORKER_GZIP_KIB} KiB"
             echo "- URL: ${DEPLOYMENT_URL}"
             echo '- Health check: PASS'
+            echo '- Production publish: PASS'
           } >> "$GITHUB_STEP_SUMMARY"
