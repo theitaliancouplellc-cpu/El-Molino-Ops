@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
+import {BACKUP_EXCLUDED_TABLES,BACKUP_TABLES} from '../lib/backup-manifest.ts';
 
 const read=(p:string)=>readFileSync(p,'utf8');
 
@@ -78,7 +79,8 @@ test('saved workspace resolves operational records to stable detail routes',()=>
   assert.match(saved,/\/ops-record\/\$\{id\}/);assert.match(saved,/favorites/);assert.match(saved,/recent_views/);
 });
 
-test('admin backup includes post-launch operational domains',()=>{
-  const admin=read('app/admin/page.tsx');
-  for(const table of ['ops_records','task_dependencies','entity_file_links','notifications','favorites','recent_views','client_events'])assert.match(admin,new RegExp(`'${table}'`));
+test('admin backup includes post-launch operational domains through the shared manifest',()=>{
+  for(const table of ['ops_records','task_dependencies','entity_file_links','notifications','favorites','recent_views'])assert.ok(BACKUP_TABLES.includes(table as any),`missing ${table}`);
+  assert.ok(BACKUP_EXCLUDED_TABLES.includes('client_events'));
+  assert.match(read('app/admin/page.tsx'),/BACKUP_TABLES/);
 });
