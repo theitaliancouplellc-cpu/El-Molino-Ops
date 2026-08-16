@@ -25,33 +25,33 @@ jobs:
 
           replacements = {
             'app/calendar/page.tsx': [
-              (',created_by:u.user.id});setBusy(false)', '});setBusy(false)'),
+              (',created_by:u.user.id});setBusy(false)', '});setBusy(false)', 1),
             ],
             'app/import/page.tsx': [
-              (".insert({location_id:profile.location_id,created_by:u.user.id,import_type:type", ".insert({location_id:profile.location_id,import_type:type"),
+              (".insert({location_id:profile.location_id,created_by:u.user.id,import_type:type", ".insert({location_id:profile.location_id,import_type:type", 1),
             ],
             'app/tasks/page.tsx': [
-              (",recurrence_rule:rr||null,created_by:u.user.id}).select('id')", ",recurrence_rule:rr||null}).select('id')"),
+              (",recurrence_rule:rr||null,created_by:u.user.id}).select('id')", ",recurrence_rule:rr||null}).select('id')", 1),
             ],
             'app/safety/page.tsx': [
-              ("try{const {data:u}=await supabase.auth.getUser();const {error}=await supabase.from('food_safety_temperature_points').insert({location_id:profile.location_id,label:pointForm.label.trim().slice(0,200),min_f:min,max_f:max,created_by:u.user?.id||null,updated_by:u.user?.id||null});", "try{const {error}=await supabase.from('food_safety_temperature_points').insert({location_id:profile.location_id,label:pointForm.label.trim().slice(0,200),min_f:min,max_f:max});"),
-              ("try{const {data:u}=await supabase.auth.getUser();if(!u.user)return;const data=", "try{const data="),
-              (",occurred_at:new Date().toISOString(),created_by:u.user.id,updated_by:u.user.id});", ",occurred_at:new Date().toISOString()});"),
+              ("try{const {data:u}=await supabase.auth.getUser();const {error}=await supabase.from('food_safety_temperature_points').insert({location_id:profile.location_id,label:pointForm.label.trim().slice(0,200),min_f:min,max_f:max,created_by:u.user?.id||null,updated_by:u.user?.id||null});", "try{const {error}=await supabase.from('food_safety_temperature_points').insert({location_id:profile.location_id,label:pointForm.label.trim().slice(0,200),min_f:min,max_f:max});", 1),
+              ("try{const {data:u}=await supabase.auth.getUser();if(!u.user)return;const data=", "try{const data=", 1),
+              (",occurred_at:new Date().toISOString(),created_by:u.user.id,updated_by:u.user.id});", ",occurred_at:new Date().toISOString()});", 1),
             ],
             'app/performance/page.tsx': [
-              ("try{const {data:u}=await supabase.auth.getUser();if(!u.user)return;const payload=", "try{const payload="),
-              (",notes:form.notes.trim().slice(0,4000)||null,created_by:u.user.id,updated_by:u.user.id};", ",notes:form.notes.trim().slice(0,4000)||null};"),
-              ("const payload=pending.map(r=>({location_id:profile.location_id,source:'toast_csv',created_by:u.user.id,updated_by:u.user.id,...r}));", "const payload=pending.map(r=>({location_id:profile.location_id,source:'toast_csv',...r}));"),
+              ("try{const {data:u}=await supabase.auth.getUser();if(!u.user)return;const payload=", "try{const payload=", 2),
+              (",notes:form.notes.trim().slice(0,4000)||null,created_by:u.user.id,updated_by:u.user.id};", ",notes:form.notes.trim().slice(0,4000)||null};", 1),
+              ("const payload=pending.map(r=>({location_id:profile.location_id,source:'toast_csv',created_by:u.user.id,updated_by:u.user.id,...r}));", "const payload=pending.map(r=>({location_id:profile.location_id,source:'toast_csv',...r}));", 1),
             ],
           }
 
           for file, reps in replacements.items():
             p=Path(file); s=p.read_text()
-            for old,new in reps:
+            for old,new,expected in reps:
               count=s.count(old)
-              if count != 1:
-                raise SystemExit(f'{file}: expected exactly one match, got {count}: {old[:100]}')
-              s=s.replace(old,new,1)
+              if count != expected:
+                raise SystemExit(f'{file}: expected {expected} match(es), got {count}: {old[:100]}')
+              s=s.replace(old,new,expected)
             p.write_text(s)
 
           test=Path('tests/audit-identity-ui-contract.test.ts')
