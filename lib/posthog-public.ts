@@ -74,7 +74,7 @@ export async function capturePosthogClientError(
       digest: string | null;
       correlation_id: string;
       online: boolean;
-      visibility_state: 'hidden' | 'visible';
+      visibility_state: string;
     };
   },
 ): Promise<boolean> {
