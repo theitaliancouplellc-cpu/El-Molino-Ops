@@ -39,7 +39,7 @@ test('PWA manifest and service worker are production-valid', async ({ request })
   const manifestResponse = await request.get('/manifest.webmanifest');
   expect(manifestResponse.ok()).toBe(true);
   const manifest = await manifestResponse.json();
-  expect(manifest.name).toBe('El Molino Ops');
+  expect(manifest.name).toBe('El Molino');
   expect(manifest.start_url).toBeTruthy();
   expect(Array.isArray(manifest.icons)).toBe(true);
   expect(manifest.icons.length).toBeGreaterThan(0);
