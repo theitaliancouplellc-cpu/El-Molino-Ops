@@ -49,23 +49,32 @@ test('PWA manifest and service worker are production-valid', async ({ request })
   const worker = await workerResponse.text();
   expect(worker).toContain("self.addEventListener('install'");
   expect(worker).toContain("self.addEventListener('fetch'");
+  expect(worker).toContain("status:503");
   expect(worker).toContain('El Molino Ops is offline');
   expect(worker).toContain('Changes are not accepted while the app cannot reach the server.');
 });
 
-test('installed app fails safely when connectivity disappears', async ({ page, context }) => {
+test('installed app fails safely when connectivity disappears', async ({ page, context, browserName }) => {
+  test.skip(browserName !== 'chromium', 'Playwright service-worker control is Chromium-only');
+
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.evaluate(async () => {
     if (!('serviceWorker' in navigator)) throw new Error('Service workers are unavailable');
     await navigator.serviceWorker.ready;
   });
+  await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller), undefined, { timeout: 10_000 });
 
   await context.setOffline(true);
-  const response = await page.reload({ waitUntil: 'domcontentloaded' });
-  expect(response?.status()).toBe(503);
-  await expect(page.getByRole('heading', { name: 'El Molino Ops is offline' })).toBeVisible();
-  await expect(page.getByText('Changes are not accepted while the app cannot reach the server.')).toBeVisible();
-  await context.setOffline(false);
+  try {
+    const response = await page.goto(`/__offline_e2e_probe__/${Date.now()}`, { waitUntil: 'domcontentloaded' });
+    expect(response).not.toBeNull();
+    expect(response!.status()).toBe(503);
+    expect(response!.fromServiceWorker()).toBe(true);
+    await expect(page.getByRole('heading', { name: 'El Molino Ops is offline' })).toBeVisible();
+    await expect(page.getByText('Changes are not accepted while the app cannot reach the server.')).toBeVisible();
+  } finally {
+    await context.setOffline(false);
+  }
 });
 
 test('mobile viewport has no horizontal application overflow and tolerates reduced motion', async ({ page }, testInfo) => {
