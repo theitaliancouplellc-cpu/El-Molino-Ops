@@ -12,10 +12,16 @@ test('Cloudflare production build bakes the immutable GitHub release SHA into th
   assert.match(nextConfig, /env:\s*\{[\s\S]*EL_MOLINO_RELEASE_SHA:\s*releaseSha/);
   assert.match(nextConfig, /process\.env\.GITHUB_SHA/);
   assert.match(healthRoute, /process\.env\.EL_MOLINO_RELEASE_SHA/);
+  assert.match(deployWorkflow, /Validate baked release identity before publish/);
+  assert.match(deployWorkflow, /grep -R -F -q/);
 });
 
-test('Cloudflare production smoke test rejects release identity drift', () => {
+test('Cloudflare production smoke test rejects release identity drift after bounded propagation', () => {
   assert.match(deployWorkflow, /EXPECTED_RELEASE_SHA:\s*\$\{\{ github\.sha \}\}/);
-  assert.match(deployWorkflow, /h\.release\?\.sha !== expected/);
-  assert.match(deployWorkflow, /Release identity: PASS/);
+  assert.match(deployWorkflow, /for i in \{1\.\.60\}/);
+  assert.match(deployWorkflow, /release=\$\{EXPECTED_RELEASE_SHA\}/);
+  assert.match(deployWorkflow, /h\.release\?\.sha\s*!==\s*expected/);
+  assert.match(deployWorkflow, /Production release identity mismatch after propagation window/);
+  assert.match(deployWorkflow, /Release artifact identity: PASS/);
+  assert.match(deployWorkflow, /Release propagation identity: PASS/);
 });
