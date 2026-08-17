@@ -6,6 +6,7 @@ import {employeeNotificationHref,safeEmployeeNotificationHref} from '../lib/empl
 const center=readFileSync('app/employee/notifications/page.tsx','utf8');
 const preferences=readFileSync('app/employee/notifications/preferences/page.tsx','utf8');
 const schedule=readFileSync('app/employee/schedule/page.tsx','utf8');
+const scheduleI18n=readFileSync('lib/i18n-schedule.ts','utf8');
 const migration=readFileSync('docs/database/employee_parity_notifications_v1.sql','utf8');
 const deepLinks=readFileSync('docs/database/employee_parity_staff_deep_links_v1.sql','utf8');
 const engagement=readFileSync('docs/database/employee_engagement_shift_pool_v5.sql','utf8');
@@ -53,7 +54,8 @@ test('published schedule notifications are revision-aware and changed-only is ev
   assert.match(migration,/schedule\.shift_changed/);
   assert.match(migration,/\/employee\/schedule\?week=/);
   assert.match(schedule,/changed_shift_ids/);
-  assert.match(schedule,/Updated in the latest publication/);
+  assert.match(schedule,/\{tx\.updated\}/);
+  assert.match(scheduleI18n,/updated:'Updated in the latest publication'/);
 });
 
 test('legacy staff notification deep links migrate to dedicated employee surfaces including Shift Pool',()=>{
