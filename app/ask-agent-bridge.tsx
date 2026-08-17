@@ -6,6 +6,7 @@ import { buildLocalAIMessages, type LocalHistoryMessage } from '@/lib/local-ai-p
 import { runLocalBrowserAI } from '@/lib/local-ai-client';
 import { beginPuterAuthFromUserGesture, preparePuterAI, runPuterBrowserAI } from '@/lib/puter-ai-client';
 import { getOpsAIKnowledge } from '@/lib/ops-ai-context';
+import { isPosthogFlagEnabled, POSTHOG_FLAGS } from '@/lib/posthog-public';
 
 function visibleHistory():LocalHistoryMessage[]{
   if(typeof document==='undefined')return [];
@@ -47,14 +48,19 @@ export default function AskAgentBridge(){
       const question=String(body?.question||'').trim();
       if(!question)return original(input,init);
 
-      const puterAuthAttempt=beginPuterAuthFromUserGesture();
       const history=Array.isArray(body.history)?body.history:visibleHistory();
       if(history.at(-1)?.role==='user'&&String(history.at(-1)?.content||'').trim()===question)history.pop();
       body.history=history.slice(-20);
 
       const {data:{session}}=await supabase.auth.getSession();
-      if(!session?.access_token)return original(input,{...init,body:JSON.stringify(body)});
+      if(!session?.access_token||!session.user?.id)return original(input,{...init,body:JSON.stringify(body)});
 
+      const aiEnabled=await isPosthogFlagEnabled(POSTHOG_FLAGS.opsAI,session.user.id,false);
+      if(!aiEnabled){
+        return jsonResponse({answer:'The AI assistant is temporarily disabled. Core El Molino operations remain available.',citations:[],degraded:true,disabled:true},503);
+      }
+
+      const puterAuthAttempt=beginPuterAuthFromUserGesture();
       try{
         const liveOps=await getOpsAIKnowledge();
         const supplied=Array.isArray(body.knowledge)?body.knowledge:[];

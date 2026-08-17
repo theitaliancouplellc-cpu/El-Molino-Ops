@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { buildClientErrorTelemetry, createCorrelationId } from '@/lib/client-telemetry';
+import { capturePosthogClientError } from '@/lib/posthog-public';
 
 export default function ErrorPage({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   const correlationId = useRef(createCorrelationId());
@@ -33,11 +34,14 @@ export default function ErrorPage({ error, reset }: { error: Error & { digest?: 
         visibilityState: document.visibilityState,
       });
 
-      await supabase.from('client_events').insert({
-        location_id: profile?.location_id ?? null,
-        user_id: userData.user.id,
-        ...telemetry,
-      });
+      await Promise.allSettled([
+        supabase.from('client_events').insert({
+          location_id: profile?.location_id ?? null,
+          user_id: userData.user.id,
+          ...telemetry,
+        }),
+        capturePosthogClientError(userData.user.id, telemetry),
+      ]);
     } catch {
       // Error reporting must never prevent recovery or expose a second failure to the user.
     }
