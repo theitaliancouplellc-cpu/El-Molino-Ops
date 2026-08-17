@@ -6,7 +6,7 @@ const manager=readFileSync('app/manager/page.tsx','utf8');
 
 test('manager overview is locale-aware with Spanish command chrome',()=>{
   assert.match(manager,/useI18n/);
-  for(const phrase of ['Resumen de gerencia','Personal y pagos','Ejecución del turno','Requiere atención','Centro de mando del restaurante','Gestión rápida'])assert.match(manager,new RegExp(phrase));
+  for(const phrase of ['Resumen de gerencia','Personal y pagos','Ejecución del turno','Requiere atención','Centro de mando del restaurante','Gestión rápida','Sin excepciones urgentes'])assert.match(manager,new RegExp(phrase));
   assert.match(manager,/toLocaleTimeString\(localeCode/);
 });
 
