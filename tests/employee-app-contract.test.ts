@@ -5,6 +5,7 @@ import {readFileSync} from 'node:fs';
 const home=readFileSync('app/employee/page.tsx','utf8');
 const setup=readFileSync('app/employee/setup/page.tsx','utf8');
 const schedule=readFileSync('app/employee/schedule/page.tsx','utf8');
+const scheduleI18n=readFileSync('lib/i18n-schedule.ts','utf8');
 const managerReview=readFileSync('app/manager/team-setup/page.tsx','utf8');
 const managerHome=readFileSync('app/manager/page.tsx','utf8');
 const routeGuard=readFileSync('app/employee-root-redirect.tsx','utf8');
@@ -43,7 +44,9 @@ test('employee schedule is own-shift focused with server-filtered trade discover
   assert.match(schedule,/submit_my_shift_change_request/);
   assert.match(schedule,/p_request_type:'swap'/);
   assert.match(schedule,/staff_trade_candidates/);
-  assert.match(schedule,/Send Trade Request/);
+  assert.match(schedule,/tx\.sendTrade/);
+  assert.match(scheduleI18n,/sendTrade:'Send Trade Request'/);
+  assert.match(scheduleI18n,/sendTrade:'Enviar Solicitud de Intercambio'/);
   assert.match(schedule,/href="\/employee\/shift-pool"/);
   assert.match(schedule,/href="\/employee\/requests"/);
   assert.doesNotMatch(schedule,/from\('shift_change_requests'\)/);

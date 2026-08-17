@@ -6,6 +6,7 @@ const layout=readFileSync('app/employee/layout.tsx','utf8');
 const connection=readFileSync('app/employee/connection-state.tsx','utf8');
 const css=readFileSync('app/employee/mobile-polish.css','utf8');
 const schedule=readFileSync('app/employee/schedule/page.tsx','utf8');
+const scheduleI18n=readFileSync('lib/i18n-schedule.ts','utf8');
 const cache=readFileSync('lib/employee-schedule-cache.ts','utf8');
 
 test('employee shell enforces mobile accessibility and device safe areas',()=>{
@@ -25,8 +26,11 @@ test('offline state is explicit and does not promise offline mutations',()=>{
  assert.match(connection,/navigator\.onLine/);
  assert.match(connection,/Changes require a connection/);
  assert.match(schedule,/requireConnection/);
- assert.match(schedule,/Schedule changes require a connection/);
- assert.match(schedule,/view only until reconnected/);
+ assert.match(schedule,/setMessage\(tx\.offline\)/);
+ assert.match(schedule,/tx\.viewOnly/);
+ assert.match(scheduleI18n,/offline:'You are offline\. Schedule changes require a connection\.'/);
+ assert.match(scheduleI18n,/viewOnly:'view only until reconnected\.'/);
+ assert.match(scheduleI18n,/offline:'Estás sin conexión\. Los cambios de horario requieren conexión\.'/);
 });
 
 test('employee schedule stores and restores only last-known employee schedule snapshots',()=>{
@@ -43,5 +47,6 @@ test('employee schedule stores and restores only last-known employee schedule sn
 test('network failure prefers cached schedule over partial server results',()=>{
  assert.match(schedule,/const failed=\[p,s,r,b\]\.some\(x=>x\.error\)/);
  assert.match(schedule,/if\(failed\)\{const cached=readEmployeeScheduleCache/);
- assert.match(schedule,/Schedule could not be refreshed and no saved copy is available/);
+ assert.match(schedule,/tx\.noSaved/);
+ assert.match(scheduleI18n,/noSaved:'Schedule could not be refreshed and no saved copy is available for this week\.'/);
 });

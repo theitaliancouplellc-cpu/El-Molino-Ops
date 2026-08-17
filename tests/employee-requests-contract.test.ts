@@ -3,14 +3,18 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 
 const page=readFileSync('app/employee/requests/page.tsx','utf8');
+const copy=readFileSync('lib/i18n-requests.ts','utf8');
 const legacy=readFileSync('app/schedule/requests/layout.tsx','utf8');
 const migration=readFileSync('docs/database/employee_requests_hardening_v3.sql','utf8');
 
 test('employee Requests Center unifies recurring, temporary, time-off and history flows',()=>{
-  assert.match(page,/Recurring weekly availability/);
-  assert.match(page,/Temporary availability/);
-  assert.match(page,/Request time off/);
-  assert.match(page,/Request history/);
+  for(const key of ['tx.weekly','tx.temp','tx.requestTimeOff','tx.requestHistory'])assert.match(page,new RegExp(key.replace('.','\\.')));
+  assert.match(copy,/weekly:'Recurring weekly availability'/);
+  assert.match(copy,/temp:'Temporary availability'/);
+  assert.match(copy,/requestTimeOff:'Request time off'/);
+  assert.match(copy,/requestHistory:'Request history'/);
+  assert.match(copy,/weekly:'Disponibilidad semanal recurrente'/);
+  assert.match(copy,/requestTimeOff:'Solicitar tiempo libre'/);
   assert.match(page,/set_my_weekly_availability/);
   assert.match(page,/submit_availability_request/);
   assert.match(page,/submit_my_time_off_request/);
@@ -37,7 +41,9 @@ test('employees can cancel only their own pending time-off and availability requ
   assert.match(migration,/where id=p_request_id and employee_id=eid and status='pending'/);
   assert.match(migration,/cancel_my_time_off_request/);
   assert.match(migration,/cancel_my_availability_request/);
-  assert.match(page,/Cancel request/);
+  assert.match(page,/tx\.cancelRequest/);
+  assert.match(copy,/cancelRequest:'Cancel request'/);
+  assert.match(copy,/cancelRequest:'Cancelar solicitud'/);
 });
 
 test('request center is employee-scoped and strips location/employee identifiers from returned evidence',()=>{
