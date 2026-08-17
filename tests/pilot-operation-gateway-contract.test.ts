@@ -22,14 +22,16 @@ test('committed mutation evidence is linked by request operation id',()=>{
  assert.match(sql,/employee_availability_overrides/i);
 });
 
-test('gateway authenticates users, whitelists RPCs, and persists outcome with admin client',()=>{
+test('gateway authenticates users, whitelists RPCs, and persists only bounded outcome fields',()=>{
  assert.match(edge,/withSupabase\(\{auth:'user'\}/i);
  assert.match(edge,/ctx\.supabase\.auth\.getUser\(\)/i);
  assert.match(edge,/OPERATION_NOT_ALLOWED/i);
  assert.match(edge,/ARGUMENT_NOT_ALLOWED/i);
  assert.match(edge,/x-pilot-operation-id/i);
- assert.match(edge,/ctx\.supabaseAdmin\.from\('pilot_operation_attempts'\)\.insert/i);
- assert.doesNotMatch(edge,/error_message|stack|payload:/i);
+ const insert=edge.match(/ctx\.supabaseAdmin\.from\('pilot_operation_attempts'\)\.insert\(\{([^}]*)\}\)/i)?.[1]||'';
+ assert.ok(insert,'missing authoritative attempt insert');
+ for(const required of ['operation_id','location_id','actor_user_id','operation','outcome','error_code','upstream_status','expected_mutation','duration_ms']) assert.ok(insert.includes(required),`missing bounded field ${required}`);
+ for(const forbidden of ['message','stack','payload','args','reason','note']) assert.ok(!insert.includes(forbidden),`raw field ${forbidden} must not persist`);
 });
 
 test('shared Supabase client routes critical writes through gateway but leaves other RPCs direct',()=>{
