@@ -45,6 +45,18 @@ jobs:
       - name: Build Cloudflare OpenNext worker
         run: npm run cf:build
 
+      - name: Validate baked release identity before publish
+        env:
+          EXPECTED_RELEASE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test -n "$EXPECTED_RELEASE_SHA"
+          if ! grep -R -F -q --exclude='*.map' "$EXPECTED_RELEASE_SHA" .open-next/server-functions .open-next/middleware 2>/dev/null; then
+            echo "Built Cloudflare artifact does not contain expected release SHA: $EXPECTED_RELEASE_SHA" >&2
+            exit 1
+          fi
+          echo "Built artifact contains expected release SHA: $EXPECTED_RELEASE_SHA"
+
       - name: Validate Cloudflare Free production limits
         id: limits
         run: |
@@ -147,16 +159,29 @@ jobs:
           test -n "$DEPLOYMENT_URL"
           test -n "$EXPECTED_RELEASE_SHA"
           echo "Deployment URL: $DEPLOYMENT_URL"
-          for i in {1..30}; do
-            if curl -fsS "$DEPLOYMENT_URL/api/health" > /tmp/health.json; then
-              break
+
+          matched=false
+          last_seen='unavailable'
+          for i in {1..60}; do
+            url="${DEPLOYMENT_URL}/api/health?release=${EXPECTED_RELEASE_SHA}&attempt=${i}"
+            if curl -fsS -H 'Cache-Control: no-cache, no-store, max-age=0' "$url" > /tmp/health.json; then
+              last_seen="$(node -e "const fs=require('fs');const h=JSON.parse(fs.readFileSync('/tmp/health.json','utf8'));process.stdout.write(String(h.release?.sha||'missing'))")"
+              if EXPECTED_RELEASE_SHA="$EXPECTED_RELEASE_SHA" node -e "const h=require('/tmp/health.json');const expected=process.env.EXPECTED_RELEASE_SHA;if(!h.ok||!h.checks?.filter(c=>c.required).every(c=>c.ok)||h.release?.sha!==expected)process.exit(1)"; then
+                matched=true
+                break
+              fi
             fi
+            echo "Waiting for Cloudflare release propagation ($i/60); live release: $last_seen; expected: $EXPECTED_RELEASE_SHA"
             sleep 2
           done
-          test -s /tmp/health.json
-          cat /tmp/health.json
-          node -e "const h=require('/tmp/health.json'); const expected=process.env.EXPECTED_RELEASE_SHA; if(!h.ok || !h.checks?.filter(c=>c.required).every(c=>c.ok) || h.release?.sha !== expected){console.error('Production release identity mismatch:',h.release?.sha,'expected',expected);process.exit(1)}"
-          curl -fsS "$DEPLOYMENT_URL/" | grep -q 'El Molino Ops'
+
+          cat /tmp/health.json || true
+          if [ "$matched" != true ]; then
+            echo "Production release identity mismatch after propagation window: $last_seen expected $EXPECTED_RELEASE_SHA" >&2
+            exit 1
+          fi
+
+          curl -fsS -H 'Cache-Control: no-cache, no-store, max-age=0' "${DEPLOYMENT_URL}/?release=${EXPECTED_RELEASE_SHA}" | grep -q 'El Molino Ops'
 
       - name: Publish production deployment summary
         env:
@@ -170,7 +195,8 @@ jobs:
             echo "- Worker: \`el-molino-ops\`"
             echo "- Worker gzip: ${WORKER_GZIP_KIB} KiB"
             echo "- URL: ${DEPLOYMENT_URL}"
-            echo '- Release identity: PASS'
+            echo '- Release artifact identity: PASS'
+            echo '- Release propagation identity: PASS'
             echo '- Health check: PASS'
             echo '- Production publish: PASS'
           } >> "$GITHUB_STEP_SUMMARY"
