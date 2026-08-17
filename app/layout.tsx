@@ -8,6 +8,7 @@ import ErrorSanitizer from './error-sanitizer';
 import AskAgentBridge from './ask-agent-bridge';
 import EmployeeRootRedirect from './employee-root-redirect';
 import PilotUseRecorder from './pilot-use-recorder';
+import {I18nProvider,LanguageToggle} from '@/lib/i18n';
 
 export const metadata: Metadata = {
   title: { default: 'El Molino Ops', template: '%s · El Molino Ops' },
@@ -24,22 +25,25 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#173d2a',
+  themeColor: '#079DB6',
   colorScheme: 'light dark',
   viewportFit: 'cover',
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body>
-        <PWARegister />
-        <ErrorSanitizer />
-        <EmployeeRootRedirect />
-        <PilotUseRecorder />
-        <GlobalActions />
-        <AskAgentBridge />
-        {children}
+        <I18nProvider>
+          <PWARegister />
+          <ErrorSanitizer />
+          <EmployeeRootRedirect />
+          <PilotUseRecorder />
+          <div className="global-language-control"><LanguageToggle compact/></div>
+          <GlobalActions />
+          <AskAgentBridge />
+          {children}
+        </I18nProvider>
       </body>
     </html>
   );
