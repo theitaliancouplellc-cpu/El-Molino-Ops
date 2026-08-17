@@ -79,10 +79,10 @@ test('restore is staging-only in the browser and applies through transactional s
 
 test('root shell uses exact unread counts, protected task writes, rollback-safe uploads, and internal links',()=>{
   assert.match(root,/head:true/);
-  assert.match(root,/\.eq\('status','open'\)/);
-  assert.match(root,/\.eq\('id',id\)\.eq\('status','open'\)/);
+  assert.match(root,/const openTasks=tasks\.filter\(t=>!\['done','cancelled'\]\.includes\(t\.status\)\)/);
+  assert.match(root,/\.eq\('id',task\.id\)\.eq\('status',task\.status\)\.select\('id'\)\.maybeSingle\(\)/);
   assert.match(root,/await supabase\.storage\.from\('el-molino-files'\)\.remove\(\[path\]\)/);
-  assert.match(root,/href=\{item\.href\}/);
+  assert.match(root,/href=\{safeInternalHref\(r\.href,'\/'\)\}/);
 });
 
 test('capture cannot upload a stopped recording after the page is unmounted',()=>{
@@ -96,8 +96,12 @@ test('diagnostic restore detects concurrent restore and blocks duplicate actions
 });
 
 test('PWA update adoption waits for genuinely unsaved form state',()=>{
-  assert.match(pwa,/document\.querySelector/);
-  assert.match(pwa,/textarea,input\[type="text"\]/);
+  assert.match(pwa,/input:not\(\[type="hidden"\]\),textarea,select/);
+  assert.match(pwa,/el\.value!==el\.defaultValue/);
+  assert.match(pwa,/el\.checked!==el\.defaultChecked/);
+  assert.match(pwa,/option\.selected!==option\.defaultSelected/);
+  assert.match(pwa,/el\.files\?\.length/);
+  assert.match(pwa,/shouldReloadForServiceWorker/);
 });
 
 test('service worker never caches authenticated document responses or non-GET mutations',()=>{
