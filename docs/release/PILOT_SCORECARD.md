@@ -12,21 +12,23 @@ For each participant, record Pass / Fail / Confusing / Not Applicable and a shor
 2. Find the next scheduled shift from Home.
 3. Open the full published weekly schedule.
 4. Navigate to a different week and back.
-5. Receive and open a schedule publication/change notification.
-6. Submit availability.
-7. Submit time off.
-8. Offer a shift or request coverage.
-9. View Shift Pool eligibility information.
-10. Claim an eligible open shift when one is available.
-11. Participate in a reciprocal trade when applicable.
-12. Read an announcement.
-13. Acknowledge a required announcement when assigned.
-14. Open assigned training.
-15. View personal time-clock state/history.
-16. View personal finalized tip information where available.
-17. Go offline after loading a schedule and verify the saved schedule is clearly marked read-only/stale.
-18. Reconnect and verify authoritative data refreshes.
-19. Sign out and sign back in.
+5. Receive and open a schedule publication/change notification in app.
+6. Enable push alerts on the participant's device from Notification Preferences.
+7. Close/background the app, receive a real push update, tap it, and verify it opens the correct employee-safe destination.
+8. Submit availability.
+9. Submit time off.
+10. Offer a shift or request coverage.
+11. View Shift Pool eligibility information.
+12. Claim an eligible open shift when one is available.
+13. Participate in a reciprocal trade when applicable.
+14. Read an announcement.
+15. Acknowledge a required announcement when assigned.
+16. Open assigned training.
+17. View personal time-clock state/history.
+18. View personal finalized tip information where available.
+19. Go offline after loading a schedule and verify the saved schedule is clearly marked read-only/stale.
+20. Reconnect and verify authoritative data refreshes.
+21. Sign out and sign back in.
 
 ## Required manager tasks
 
@@ -44,7 +46,7 @@ For each participant, record Pass / Fail / Confusing / Not Applicable and a shor
 ## Defect severity
 
 - P0 — security/privacy breach, lost/duplicated approved schedule mutation, incorrect schedule presented as current, unrecoverable corruption, widespread login outage.
-- P1 — critical scheduling/request workflow unavailable without a safe workaround.
+- P1 — critical scheduling/request workflow unavailable without a safe workaround, or enabled staff devices systematically fail to receive required closed-app alerts.
 - P2 — material inconvenience with a safe workaround.
 - P3 — cosmetic/usability issue.
 
