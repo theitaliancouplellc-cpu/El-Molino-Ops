@@ -11,11 +11,18 @@ test('critical employee screens are locale-aware',()=>{
 test('schedule and requests keep authored operational fields as raw data',()=>{
  const schedule=fs.readFileSync('app/employee/schedule/page.tsx','utf8');
  const requests=fs.readFileSync('app/employee/requests/page.tsx','utf8');
- assert.match(schedule,/\{s\.notes\}/);
- assert.match(schedule,/\{s\.employee_name\}/);
+ assert.match(schedule,/s\.notes/);
+ assert.match(schedule,/s\.employee_name/);
+ assert.match(schedule,/s\.role_name/);
  assert.match(requests,/x\.reason\|\|x\.employee_note/);
  assert.ok(!schedule.includes('translate('));
  assert.ok(!requests.includes('translate('));
+});
+
+test('locale never changes the internal reciprocal trade reason',()=>{
+ const schedule=fs.readFileSync('app/employee/schedule/page.tsx','utf8');
+ assert.match(schedule,/p_reason:'Employee requested reciprocal shift trade'/);
+ assert.doesNotMatch(schedule,/p_reason:tx\./);
 });
 
 test('critical bilingual dictionaries include Spanish operational copy',()=>{
