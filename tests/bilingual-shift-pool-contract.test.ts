@@ -8,6 +8,7 @@ test('Shift Pool is locale aware with Spanish system UI',()=>{
  for(const phrase of ['Bolsa de Turnos','Flexibilidad de horario','Mi Actividad','Mis Intercambios','Verificación de elegibilidad aprobada'])assert.match(source,new RegExp(phrase));
  assert.match(source,/toLocaleString\(localeCode/);
  assert.match(source,/toLocaleTimeString\(localeCode/);
+ assert.match(source,/locale==='es'\?'Navegación del personal':'Staff navigation'/);
 });
 
 test('Shift Pool keeps authoritative RPC contracts and raw state values',()=>{
