@@ -93,6 +93,41 @@ jobs:
           echo 'Cloudflare production deployment credentials are missing. Failing closed.' >&2
           exit 1
 
+      - name: Ensure account workers.dev subdomain exists
+        if: ${{ env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' }}
+        run: |
+          set -euo pipefail
+
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/subdomain"
+          status="$(curl -sS -o /tmp/cf-workers-subdomain.json -w '%{http_code}' \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -H 'Content-Type: application/json' \
+            "$api")"
+
+          if [ "$status" = "200" ]; then
+            existing="$(node -e "const fs=require('fs');const j=JSON.parse(fs.readFileSync('/tmp/cf-workers-subdomain.json','utf8'));process.stdout.write(j?.result?.subdomain||'')")"
+            if [ -n "$existing" ]; then
+              echo "Cloudflare account workers.dev subdomain already exists."
+              exit 0
+            fi
+          elif [ "$status" != "404" ]; then
+            echo "Unable to inspect Cloudflare workers.dev account subdomain (HTTP $status)." >&2
+            node -e "const fs=require('fs');const j=JSON.parse(fs.readFileSync('/tmp/cf-workers-subdomain.json','utf8'));console.error((j.errors||[]).map(e=>e.message).join('; ')||'Cloudflare API error')"
+            exit 1
+          fi
+
+          suffix="$(printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | sha256sum | cut -c1-10)"
+          candidate="el-molino-ops-${suffix}"
+          echo "No workers.dev account subdomain exists; creating a deterministic deployment subdomain."
+
+          curl -fsS -X PUT "$api" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -H 'Content-Type: application/json' \
+            --data "{\"subdomain\":\"${candidate}\"}" \
+            > /tmp/cf-workers-subdomain-create.json
+
+          node -e "const fs=require('fs');const j=JSON.parse(fs.readFileSync('/tmp/cf-workers-subdomain-create.json','utf8'));if(!j.success||!j.result?.subdomain){console.error((j.errors||[]).map(e=>e.message).join('; ')||'Cloudflare subdomain creation failed');process.exit(1)} console.log('Cloudflare workers.dev account subdomain created successfully.')"
+
       - name: Deploy production Worker
         id: cloudflare
         uses: cloudflare/wrangler-action@v4
