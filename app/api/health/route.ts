@@ -23,6 +23,7 @@ async function checkedFetch(url: string, key: string) {
 
 function releaseMetadata() {
   const sha =
+    process.env.EL_MOLINO_RELEASE_SHA ||
     process.env.VERCEL_GIT_COMMIT_SHA ||
     process.env.GITHUB_SHA ||
     process.env.CF_VERSION_METADATA ||
