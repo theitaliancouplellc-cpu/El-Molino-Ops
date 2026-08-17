@@ -21,6 +21,7 @@ jobs:
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_gtR8VfsQ5n-FPPbypnYKTw_f2k3Xyrk
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      EL_MOLINO_RELEASE_SHA: ${{ github.sha }}
 
     steps:
       - name: Checkout certified source
@@ -134,7 +135,7 @@ jobs:
         with:
           apiToken: ${{ env.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
-          command: deploy --var GITHUB_SHA:${{ github.sha }}
+          command: deploy
           packageManager: npm
 
       - name: Smoke test deployed Worker
