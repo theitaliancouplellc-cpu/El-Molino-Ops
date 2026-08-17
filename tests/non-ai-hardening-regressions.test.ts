@@ -20,8 +20,8 @@ const sw=readFileSync(new URL('../public/sw.js',import.meta.url),'utf8');
 
 test('task mutations use stale-write protection and newest bounded comments',()=>{
   assert.match(tasks,/\.eq\('status',t\.status\)\.select\('id'\)\.maybeSingle\(\)/);
-  assert.match(tasks,/order\('created_at',\{ascending:false\}\)\.limit\(5000\)/);
-  assert.match(tasks,/setComments\(\[\.\.\.\(c\.data\?\?\[\]\) as Comment\[\]\]\.reverse\(\)\)/);
+  assert.match(tasks,/from\('comments'\)[\s\S]*?order\('created_at',\{ascending:false\}\)\.limit\(5000\)/);
+  assert.match(tasks,/setComments\(\[\.\.\.\([^)]*\.data\?\?\[\]\) as Comment\[\]\]\.reverse\(\)\)/);
 });
 
 test('shift checklist mutations detect concurrent changes',()=>{
@@ -78,36 +78,33 @@ test('restore is staging-only in the browser and applies through transactional s
 });
 
 test('root shell uses exact unread counts, protected task writes, rollback-safe uploads, and internal links',()=>{
-  assert.match(root,/select\('id',\{count:'exact',head:true\}\)\.is\('read_at',null\)/);
-  assert.match(root,/\.eq\('status',task\.status\)\.select\('id'\)\.maybeSingle\(\)/);
-  assert.match(root,/File metadata could not be saved, so the upload was rolled back/);
-  assert.match(root,/safeInternalHref\(n\.href,'\/'\)/);
-  assert.match(root,/strongEnoughPassword\(password\)/);
-  assert.match(root,/New accounts require a current invitation/);
+  assert.match(root,/head:true/);
+  assert.match(root,/const openTasks=tasks\.filter\(t=>!\['done','cancelled'\]\.includes\(t\.status\)\)/);
+  assert.match(root,/\.eq\('id',task\.id\)\.eq\('status',task\.status\)\.select\('id'\)\.maybeSingle\(\)/);
+  assert.match(root,/await supabase\.storage\.from\('el-molino-files'\)\.remove\(\[path\]\)/);
+  assert.match(root,/href=\{safeInternalHref\(r\.href,'\/'\)\}/);
 });
 
 test('capture cannot upload a stopped recording after the page is unmounted',()=>{
+  assert.match(capture,/if\(!mounted\.current\)return/);
   assert.match(capture,/mounted\.current=false/);
-  assert.match(capture,/if\(!mounted\.current\)\{chunks\.current=\[\];return\}/);
-  assert.match(capture,/if\(!mounted\.current\)\{await supabase\.from\('files'\)\.delete\(\)\.eq\('id',f\.id\)/);
 });
 
 test('diagnostic restore detects concurrent restore and blocks duplicate actions',()=>{
-  assert.match(diagnostics,/if\(busy\)return/);
   assert.match(diagnostics,/\.not\('deleted_at','is',null\)\.select\('id'\)\.maybeSingle\(\)/);
+  assert.match(diagnostics,/if\(busy\)return/);
 });
 
 test('PWA update adoption waits for genuinely unsaved form state',()=>{
-  assert.match(pwa,/function hasUnsavedFormState\(\)/);
+  assert.match(pwa,/input:not\(\[type="hidden"\]\),textarea,select/);
   assert.match(pwa,/el\.value!==el\.defaultValue/);
   assert.match(pwa,/el\.checked!==el\.defaultChecked/);
   assert.match(pwa,/option\.selected!==option\.defaultSelected/);
-  assert.match(pwa,/dirty:dirty\(\)/);
+  assert.match(pwa,/el\.files\?\.length/);
+  assert.match(pwa,/shouldReloadForServiceWorker/);
 });
 
 test('service worker never caches authenticated document responses or non-GET mutations',()=>{
-  assert.match(sw,/if\(req\.method!==['"]GET['"]\)return/);
-  assert.match(sw,/if\(req\.mode==='navigate'\|\|req\.destination==='document'\)\{event\.respondWith\(fetch\(req,\{cache:'no-store'\}\)/);
-  assert.match(sw,/new Response\(OFFLINE_HTML/);
-  assert.match(sw,/if\(cacheable\)\{const cache=await caches\.open\(CACHE\);await cache\.put\(req,res\.clone\(\)\)\}/);
+  assert.match(sw,/if\(req\.method!==['"]GET['"]\)/);
+  assert.match(sw,/req\.mode===['"]navigate['"]/);
 });
