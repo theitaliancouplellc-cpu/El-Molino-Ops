@@ -48,6 +48,10 @@ A release is production-ready only when feature behavior, authorization, data in
 - Notification deep links are employee-safe.
 - Duplicate event delivery cannot create a notification storm.
 - Required announcements remain outstanding until acknowledged.
+- Push enrollment is a user-gesture device action and push subscription evidence is RPC-only.
+- Closed-app push uses privacy-safe generic lock-screen copy rather than raw notification/database text.
+- Push delivery is deduplicated per notification/device, retries transient failures with bounded backoff, and retires expired subscriptions.
+- Push dispatch is authenticated independently from the public function URL and private VAPID material remains server-only.
 
 ### Mobile and accessibility
 
@@ -74,6 +78,7 @@ A release is production-ready only when feature behavior, authorization, data in
 - Restore is all-or-nothing for a requested recovery operation.
 - Audit evidence exists for consequential manager and employee state transitions.
 - Rollback/forward-fix procedure is documented.
+- Push endpoints and encryption keys are treated as runtime device credentials rather than portable backup data.
 
 ### Build and runtime
 
@@ -83,6 +88,7 @@ A release is production-ready only when feature behavior, authorization, data in
 - Cloudflare OpenNext build passes.
 - Cloudflare worker validation and workerd smoke test pass.
 - Production deployment reports READY.
+- Live health reports the exact immutable release SHA that the deployment workflow certified.
 
 ## Automated acceptance thresholds
 
@@ -100,7 +106,8 @@ Use at least 3 managers and 5 trusted staff for 3 operating days while the exist
 
 - sign in and recover a session;
 - find next shift and weekly schedule;
-- receive a schedule publication/change;
+- receive a schedule publication/change in app and as an enabled-device push while the app is closed;
+- open a push alert and land on the employee-safe destination;
 - submit availability and time off;
 - offer/request coverage for a shift;
 - claim an eligible open shift;
