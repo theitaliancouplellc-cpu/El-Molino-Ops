@@ -5,6 +5,7 @@ on:
   push:
     paths:
       - '.github/workflows/ai-runtime-smoke.yml'
+      - 'playwright.ai-runtime.config.ts'
       - 'scripts/ai-runtime-smoke.ts'
       - 'scripts/browser-ai-runtime.spec.ts'
       - 'app/ai-runtime-test/**'
@@ -65,7 +66,7 @@ jobs:
           cat /tmp/el-molino-next.log
           exit 1
       - name: Run browser worker inference
-        run: npx playwright test scripts/browser-ai-runtime.spec.ts --reporter=line
+        run: npx playwright test --config=playwright.ai-runtime.config.ts
       - name: Show server log on failure
         if: failure()
         run: cat /tmp/el-molino-next.log || true
