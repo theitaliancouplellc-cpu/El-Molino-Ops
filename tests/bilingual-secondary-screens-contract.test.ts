@@ -38,7 +38,15 @@ test('notification preferences preserve authoritative category keys and RPC argu
 });
 
 test('training keeps authored course, lesson, quiz, review and task content unmodified',()=>{
-  for(const authored of ['course.name','course.description','l?.title','payload.lesson.title','payload.lesson.content','q.prompt','option','pr?.review_note','taskComment.trim()'])assert.match(training,new RegExp(authored.replaceAll('.','\\.').replaceAll('?','\\?')));
+  assert.match(training,/courses\.find\(course=>course\.id===id\)\?\.name/);
+  assert.match(training,/courses\.find\(course=>course\.id===a\.course_id\)\?\.description/);
+  assert.match(training,/l\?\.title/);
+  assert.match(training,/payload\.lesson\.title/);
+  assert.match(training,/payload\.lesson\.content/);
+  assert.match(training,/q\.prompt/);
+  assert.match(training,/\{option\}/);
+  assert.match(training,/pr\?\.review_note/);
+  assert.match(training,/taskComment\.trim\(\)/);
   for(const rpc of ['training_lesson_payload','start_training_lesson','complete_training_lesson','submit_training_quiz','submit_training_task'])assert.match(training,new RegExp(rpc));
 });
 
