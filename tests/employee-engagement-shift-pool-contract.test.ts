@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 
 const home=readFileSync('app/employee/page.tsx','utf8');
 const schedule=readFileSync('app/employee/schedule/page.tsx','utf8');
+const scheduleI18n=readFileSync('lib/i18n-schedule.ts','utf8');
 const pool=readFileSync('app/employee/shift-pool/page.tsx','utf8');
 const managerPool=readFileSync('app/schedule/pool/page.tsx','utf8');
 const legacy=readFileSync('app/schedule/pool/layout.tsx','utf8');
@@ -47,8 +48,10 @@ test('employee Shift Pool contains no manager review surface or protected-table 
 
 test('employee schedule submits coverage and reciprocal trades through authoritative RPCs',()=>{
  assert.match(schedule,/submit_my_shift_change_request/);
- assert.match(schedule,/Trade sent to your coworker for acceptance/);
- assert.match(schedule,/coworker accepts first/);
+ assert.match(schedule,/setMessage\(error\?error\.message:tx\.tradeSuccess\)/);
+ assert.match(schedule,/\{tx\.tradeHelp\}/);
+ assert.match(scheduleI18n,/tradeSuccess:'Trade sent to your coworker for acceptance\. Management reviews it only after they accept\.'/);
+ assert.match(scheduleI18n,/tradeHelp:'Only reciprocal matches[\s\S]*The coworker accepts first; management still approves the final trade\.'/);
  assert.doesNotMatch(schedule,/from\('shift_change_requests'\)\.insert/);
  for(const href of ['/employee/shift-pool','/employee/requests','/employee/team'])assert.match(schedule,new RegExp(href.replaceAll('/','\\/')));
  assert.match(changes,/revoke insert,update,delete on public\.shift_change_requests from authenticated/);
