@@ -21,7 +21,18 @@ async function checkedFetch(url: string, key: string) {
   }
 }
 
+function releaseMetadata() {
+  const sha =
+    process.env.VERCEL_GIT_COMMIT_SHA ||
+    process.env.GITHUB_SHA ||
+    process.env.CF_VERSION_METADATA ||
+    'unknown';
+  const environment = process.env.VERCEL_ENV || process.env.NODE_ENV || 'unknown';
+  return { sha, environment };
+}
+
 export async function GET() {
+  const startedAt = Date.now();
   const checks: Check[] = [];
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -54,8 +65,23 @@ export async function GET() {
   });
 
   const ok = checks.filter((check) => check.required).every((check) => check.ok);
+  const release = releaseMetadata();
   return NextResponse.json(
-    { ok, service: 'el-molino-ops', time: new Date().toISOString(), checks, ai: { mode: 'free-only-rotation', providers } },
-    { status: ok ? 200 : 503, headers: { 'cache-control': 'no-store' } },
+    {
+      ok,
+      service: 'el-molino-ops',
+      time: new Date().toISOString(),
+      latency_ms: Date.now() - startedAt,
+      release,
+      checks,
+      ai: { mode: 'free-only-rotation', providers },
+    },
+    {
+      status: ok ? 200 : 503,
+      headers: {
+        'cache-control': 'no-store',
+        'x-el-molino-release': release.sha,
+      },
+    },
   );
 }
