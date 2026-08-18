@@ -8,6 +8,7 @@ const sync=fs.readFileSync('scripts/capacitor-sync.mjs','utf8');
 const gradle=fs.readFileSync('android/app/build.gradle','utf8');
 const gitignore=fs.readFileSync('.gitignore','utf8');
 const releaseWorkflow=fs.readFileSync('.github/workflows/native-release.yml','utf8');
+const mobileCI=fs.readFileSync('.github/workflows/mobile-ci.yml','utf8');
 
 test('iOS release configuration keeps push capability and targets modern 64-bit devices',()=>{
   assert.match(entitlements,/<key>aps-environment<\/key>/);
@@ -82,4 +83,13 @@ test('signed iOS release fails closed when privacy manifests are absent or malfo
   assert.match(releaseWorkflow,/Signed iOS app contains no PrivacyInfo\.xcprivacy manifest/);
   assert.match(releaseWorkflow,/while IFS= read -r manifest/);
   assert.match(releaseWorkflow,/plutil -lint "\$manifest"/);
+});
+
+test('ordinary mobile CI verifies privacy manifests in the built iOS app before release credentials exist',()=>{
+  assert.match(mobileCI,/Build unsigned iOS simulator application/);
+  assert.match(mobileCI,/Verify bundled iOS privacy manifests/);
+  assert.match(mobileCI,/Release-iphonesimulator\/App\.app/);
+  assert.match(mobileCI,/find "\$APP" -name PrivacyInfo\.xcprivacy -type f -print/);
+  assert.match(mobileCI,/Built iOS app contains no PrivacyInfo\.xcprivacy manifest/);
+  assert.match(mobileCI,/plutil -lint "\$manifest"/);
 });
