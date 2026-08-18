@@ -35,6 +35,21 @@ test('root document carries browser hardening headers and no framework signature
   expect(browserErrors).toEqual([]);
 });
 
+test('root authentication shell switches to Spanish and persists the locale', async ({ page }) => {
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.evaluate(() => window.localStorage.removeItem('el-molino-locale'));
+  await page.reload({ waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByRole('heading', { name: 'El Molino Ops' })).toBeVisible();
+  await page.getByRole('main').getByRole('button', { name: 'ES', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Iniciar sesión' })).toBeVisible();
+  await expect(page.getByText('Espacio privado del restaurante. Las cuentas nuevas requieren una invitación vigente.')).toBeVisible();
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('button', { name: 'Iniciar sesión' })).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'es');
+});
+
 test('PWA manifest and service worker are production-valid', async ({ request }) => {
   const manifestResponse = await request.get('/manifest.webmanifest');
   expect(manifestResponse.ok()).toBe(true);
