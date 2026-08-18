@@ -1,6 +1,7 @@
 'use client';
 
 import { supabase } from '@/lib/supabase';
+import {disableNativePush,enableNativePush,getNativePushState,nativePushSupported} from '@/lib/native-push';
 
 export type PushDeviceState = 'unsupported' | 'default' | 'denied' | 'enabled' | 'disabled';
 
@@ -20,6 +21,7 @@ export function webPushSupported() {
 }
 
 export function isIosLike() {
+  if(nativePushSupported()) return false;
   if (typeof navigator === 'undefined') return false;
   return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 }
@@ -52,6 +54,7 @@ async function persistSubscription(subscription: PushSubscription) {
 }
 
 export async function getPushDeviceState(): Promise<PushDeviceState> {
+  if(nativePushSupported()) return getNativePushState();
   if (!webPushSupported()) return 'unsupported';
   if (Notification.permission === 'denied') return 'denied';
   const reg = await registration();
@@ -61,6 +64,7 @@ export async function getPushDeviceState(): Promise<PushDeviceState> {
 }
 
 export async function enablePushOnThisDevice(): Promise<PushDeviceState> {
+  if(nativePushSupported()) return enableNativePush();
   if (!webPushSupported()) return 'unsupported';
   const permission = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
   if (permission === 'denied') return 'denied';
@@ -87,6 +91,7 @@ export async function enablePushOnThisDevice(): Promise<PushDeviceState> {
 }
 
 export async function disablePushOnThisDevice(): Promise<PushDeviceState> {
+  if(nativePushSupported()) return disableNativePush();
   if (!webPushSupported()) return 'unsupported';
   const reg = await registration();
   const subscription = await reg.pushManager.getSubscription();
