@@ -57,3 +57,14 @@ $function$;
 -- cannot probe arbitrary period/role UUIDs under SECURITY DEFINER privileges.
 revoke all on function public.schedule_minimum_assigned_coverage(uuid,uuid,timestamptz,timestamptz) from public, anon, authenticated;
 grant execute on function public.schedule_minimum_assigned_coverage(uuid,uuid,timestamptz,timestamptz) to service_role;
+
+-- The underlying staffing template is manager configuration, not employee data.
+drop policy if exists schedule_coverage_read on public.schedule_coverage_requirements;
+create policy schedule_coverage_read
+on public.schedule_coverage_requirements
+for select
+to authenticated
+using (
+  location_id = public.current_location_id()
+  and public.current_app_role() in ('admin','manager')
+);
