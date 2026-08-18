@@ -7,6 +7,7 @@ const syncRoute=readFileSync('app/api/toast/sync/route.ts','utf8');
 const statusRoute=readFileSync('app/api/toast/status/route.ts','utf8');
 const toastPage=readFileSync('app/toast/page.tsx','utf8');
 const toolsPage=readFileSync('app/tools/page.tsx','utf8');
+const syncLeaseSql=readFileSync('docs/database/toast_sync_lease_v1.sql','utf8');
 
 test('Toast credentials stay server-only and are never hardcoded',()=>{
   for(const name of ['TOAST_API_HOST','TOAST_CLIENT_ID','TOAST_CLIENT_SECRET','TOAST_RESTAURANT_GUID'])assert.match(toastClient,new RegExp(`process\\.env\\.${name}`));
@@ -20,8 +21,22 @@ test('Toast sync is authenticated, manager-gated and server-ingested',()=>{
   assert.match(syncRoute,/Manager access required/);
   assert.match(syncRoute,/fetchToastSnapshot/);
   assert.match(syncRoute,/ingest_toast_snapshot/);
-  assert.match(syncRoute,/toast_record_sync_result/);
+  assert.match(syncRoute,/toast_begin_sync/);
+  assert.match(syncRoute,/toast_finish_sync/);
   assert.doesNotMatch(syncRoute,/service_role/i);
+});
+
+test('Toast sync uses one atomic per-location lease and fails concurrent callers closed',()=>{
+  assert.match(syncLeaseSql,/active_sync_id uuid/i);
+  assert.match(syncLeaseSql,/active_sync_started_at timestamptz/i);
+  assert.match(syncLeaseSql,/on conflict\(location_id\) do update/i);
+  assert.match(syncLeaseSql,/active_sync_started_at < now\(\) - interval '30 minutes'/i);
+  assert.match(syncLeaseSql,/and active_sync_id=p_sync_id/i);
+  assert.match(syncLeaseSql,/revoke all on function public\.toast_begin_sync\(date\) from public, anon/i);
+  assert.match(syncLeaseSql,/revoke all on function public\.toast_finish_sync\(uuid,date,text,text,text,jsonb\) from public, anon/i);
+  assert.match(syncRoute,/TOAST_SYNC_IN_PROGRESS/);
+  assert.match(syncRoute,/status:409/);
+  assert.match(syncRoute,/retry-after/);
 });
 
 test('Toast client imports labor, orders, cash entries and deposits',()=>{
