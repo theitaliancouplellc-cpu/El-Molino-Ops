@@ -7,6 +7,7 @@ const localizedHelpers=[
   'app/employee/connection-state.tsx',
   'app/error.tsx',
   'app/ops/record-extras.tsx',
+  'app/pwa-register.tsx',
   'app/schedule/pool/layout.tsx',
   'app/schedule/requests/layout.tsx',
   'app/team/layout.tsx',
