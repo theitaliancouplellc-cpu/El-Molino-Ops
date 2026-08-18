@@ -235,7 +235,7 @@ jobs:
             -exportPath "$RUNNER_TEMP/ElMolinoExport" \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
 
-      - name: Verify signed iOS artifact and production push entitlement
+      - name: Verify signed iOS artifact, privacy manifests, and production push entitlement
         shell: bash
         run: |
           set -euo pipefail
@@ -253,6 +253,12 @@ jobs:
           EXPECTED_DOMAIN="$(node -e "process.stdout.write(new URL(process.env.CAPACITOR_SERVER_URL).hostname)")"
           BOUND_DOMAIN="$(/usr/libexec/PlistBuddy -c 'Print :WKAppBoundDomains:0' "$APP/Info.plist")"
           test "$BOUND_DOMAIN" = "$EXPECTED_DOMAIN" || { echo '::error::Signed app-bound domain does not match CAPACITOR_SERVER_URL'; exit 1; }
+          PRIVACY_MANIFESTS="$RUNNER_TEMP/privacy-manifests.txt"
+          find "$APP" -name PrivacyInfo.xcprivacy -type f -print > "$PRIVACY_MANIFESTS"
+          test -s "$PRIVACY_MANIFESTS" || { echo '::error::Signed iOS app contains no PrivacyInfo.xcprivacy manifest'; exit 1; }
+          while IFS= read -r manifest; do
+            plutil -lint "$manifest"
+          done < "$PRIVACY_MANIFESTS"
           cp "$IPA" El-Molino-Ops-ios-release.ipa
 
       - uses: actions/upload-artifact@v4
