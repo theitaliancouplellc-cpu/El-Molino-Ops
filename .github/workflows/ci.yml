@@ -16,6 +16,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.62.1-noble
     timeout-minutes: 35
     env:
       NEXT_PUBLIC_SUPABASE_URL: https://asuvgjxdmxizbnjrccsz.supabase.co
@@ -29,12 +31,14 @@ jobs:
           cache-dependency-path: package-lock.json
       - name: Install locked dependencies
         run: npm ci --no-audit --no-fund
+      - name: Verify pinned Playwright runtime
+        run: |
+          node -e "const v=require('@playwright/test/package.json').version; if(v!=='1.62.1') throw new Error('Unexpected Playwright version '+v)"
+          test -d /ms-playwright
       - name: Type check
         run: npx tsc --noEmit
       - name: Production build and regression suite
         run: npm run build
-      - name: Install Playwright production browsers
-        run: npx playwright install --with-deps chromium webkit
       - name: Run production browser acceptance matrix
         run: npx playwright test
       - name: Preserve Playwright evidence
