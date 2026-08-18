@@ -6,7 +6,9 @@ import { App } from '@capacitor/app';
 import { Keyboard } from '@capacitor/keyboard';
 import { Network } from '@capacitor/network';
 import { StatusBar, Style } from '@capacitor/status-bar';
+import { PushNotifications } from '@capacitor/push-notifications';
 import { nativeRouteFromUrl } from '@/lib/native-navigation';
+import { employeeNotificationHref } from '@/lib/employee-notifications';
 import { SESSION_REFRESH_REQUEST_EVENT } from '@/lib/session-resilience';
 
 export default function NativeRuntime() {
@@ -36,6 +38,9 @@ export default function NativeRuntime() {
       else if (location.pathname !== '/') location.assign('/');
     }).then((handle) => removers.push(() => handle.remove()));
     void Network.addListener('networkStatusChange', (status) => setNetwork(status.connected)).then((handle) => removers.push(() => handle.remove()));
+    void PushNotifications.addListener('pushNotificationActionPerformed',({notification})=>{
+      const data=notification.data||{};route(employeeNotificationHref(typeof data.href==='string'?data.href:null,typeof data.notification_id==='string'?data.notification_id:null));
+    }).then((handle)=>removers.push(()=>handle.remove()));
     void Keyboard.addListener('keyboardWillShow', () => { document.documentElement.dataset.keyboard = 'open'; }).then((handle) => removers.push(() => handle.remove()));
     void Keyboard.addListener('keyboardWillHide', () => { delete document.documentElement.dataset.keyboard; }).then((handle) => removers.push(() => handle.remove()));
     return () => { for (const remove of removers) void remove(); };
