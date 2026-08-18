@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import { SESSION_REFRESH_REQUEST_EVENT } from '@/lib/session-resilience';
 
 const RAW_ERROR_PATTERNS=[
   /jwt issued at future/i,/jwt expired/i,/invalid jwt/i,/invalid claim/i,/token.*expired/i,
@@ -36,7 +36,8 @@ export default function ErrorSanitizer(){
           const last=Number(sessionStorage.getItem('elmolino_session_recovery_at')||0);
           if(Date.now()-last>60_000){
             refreshing=true;sessionStorage.setItem('elmolino_session_recovery_at',String(Date.now()));
-            void supabase.auth.refreshSession().finally(()=>{refreshing=false;});
+            window.dispatchEvent(new Event(SESSION_REFRESH_REQUEST_EVENT));
+            window.setTimeout(()=>{refreshing=false},1000);
           }
         }
       });

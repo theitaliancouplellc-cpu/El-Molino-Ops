@@ -64,9 +64,9 @@ test('Ask AI is pinned to zero-cost gateway models',()=>{
 });
 
 test('raw JWT and database internals are sanitized before reaching users',()=>{
-  const sanitizer=read('app/error-sanitizer.tsx'),layout=read('app/layout.tsx'),pwa=read('app/pwa-register.tsx');
-  assert.match(sanitizer,/jwt issued at future/i);assert.match(sanitizer,/friendlyErrorText/);assert.match(sanitizer,/refreshSession/);
-  assert.match(layout,/ErrorSanitizer/);assert.match(pwa,/friendlyErrorText/);
+  const sanitizer=read('app/error-sanitizer.tsx'),session=read('app/session-resilience.tsx'),layout=read('app/layout.tsx'),pwa=read('app/pwa-register.tsx');
+  assert.match(sanitizer,/jwt issued at future/i);assert.match(sanitizer,/friendlyErrorText/);assert.match(sanitizer,/SESSION_REFRESH_REQUEST_EVENT/);
+  assert.match(session,/refreshSession/);assert.match(layout,/ErrorSanitizer/);assert.match(layout,/SessionResilience/);assert.match(pwa,/friendlyErrorText/);
 });
 
 test('operational record detail preserves attachment favorite and recent workflows',()=>{
