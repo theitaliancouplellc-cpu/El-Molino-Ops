@@ -10,6 +10,7 @@ import AskAgentBridge from './ask-agent-bridge';
 import EmployeeRootRedirect from './employee-root-redirect';
 import PilotUseRecorder from './pilot-use-recorder';
 import ProductionTelemetry from './production-telemetry';
+import SessionResilience from './session-resilience';
 import {I18nProvider,LanguageToggle} from '@/lib/i18n';
 
 export const metadata: Metadata = {
@@ -42,6 +43,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           <EmployeeRootRedirect />
           <PilotUseRecorder />
           <ProductionTelemetry />
+          <SessionResilience />
           <div className="global-language-control"><LanguageToggle compact/></div>
           <GlobalActions />
           <AskAgentBridge />
