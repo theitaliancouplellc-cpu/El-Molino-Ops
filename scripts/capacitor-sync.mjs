@@ -50,4 +50,23 @@ if (!requestedPlatforms.includes('android')) {
   }
 
   if (patched !== source) await writeFile(projectPath, patched, 'utf8');
+
+  // WKAppBoundDomains must match the remote HTTPS origin actually embedded by
+  // this native build. Keeping a stale domain here can make an otherwise valid
+  // signed app unable to navigate to its configured production server.
+  const productionOrigin = 'https://el-molino-ops.vercel.app';
+  const configuredOrigin = process.env.CAPACITOR_SERVER_URL || productionOrigin;
+  const serverUrl = new URL(configuredOrigin);
+  if (serverUrl.protocol !== 'https:') {
+    throw new Error('CAPACITOR_SERVER_URL must use HTTPS before iOS app-bound domains are updated.');
+  }
+
+  const infoPath = new URL('../ios/App/App/Info.plist', import.meta.url);
+  const infoSource = await readFile(infoPath, 'utf8');
+  const appBoundDomainPattern = /(<key>WKAppBoundDomains<\/key>\s*<array>\s*<string>)[^<]+(<\/string>\s*<\/array>)/;
+  if (!appBoundDomainPattern.test(infoSource)) {
+    throw new Error('Could not locate WKAppBoundDomains in Info.plist; refusing unsafe plist rewrite.');
+  }
+  const infoPatched = infoSource.replace(appBoundDomainPattern, `$1${serverUrl.hostname}$2`);
+  if (infoPatched !== infoSource) await writeFile(infoPath, infoPatched, 'utf8');
 }

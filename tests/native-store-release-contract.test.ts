@@ -7,6 +7,7 @@ const entitlements=fs.readFileSync('ios/App/App/App.entitlements','utf8');
 const sync=fs.readFileSync('scripts/capacitor-sync.mjs','utf8');
 const gradle=fs.readFileSync('android/app/build.gradle','utf8');
 const gitignore=fs.readFileSync('.gitignore','utf8');
+const releaseWorkflow=fs.readFileSync('.github/workflows/native-release.yml','utf8');
 
 test('iOS release configuration keeps push capability and targets modern 64-bit devices',()=>{
   assert.match(entitlements,/<key>aps-environment<\/key>/);
@@ -16,6 +17,14 @@ test('iOS release configuration keeps push capability and targets modern 64-bit 
   assert.match(info,/<string>arm64<\/string>/);
   assert.doesNotMatch(info,/<string>armv7<\/string>/);
   assert.match(info,/<string>com\.elmolino\.ops<\/string>/);
+});
+
+test('iOS app-bound domain follows the HTTPS origin selected for the native release',()=>{
+  assert.match(sync,/CAPACITOR_SERVER_URL/);
+  assert.match(sync,/serverUrl\.protocol !== 'https:'/);
+  assert.match(sync,/WKAppBoundDomains/);
+  assert.match(sync,/serverUrl\.hostname/);
+  assert.match(sync,/refusing unsafe plist rewrite/);
 });
 
 test('Android release signing is optional in ordinary CI and secret-driven for production',()=>{
@@ -37,4 +46,32 @@ test('native provider and signing credential files cannot be committed accidenta
     '*.p12',
     '*.mobileprovision',
   ]) assert.ok(gitignore.includes(expected),`missing native credential ignore: ${expected}`);
+});
+
+test('native store release is manual, fail-closed, signed, and produces store artifacts',()=>{
+  assert.match(releaseWorkflow,/workflow_dispatch:/);
+  assert.doesNotMatch(releaseWorkflow,/\n\s+push:/);
+  assert.match(releaseWorkflow,/CAPACITOR_SERVER_URL: \$\{\{ inputs\.server_url \}\}/);
+
+  for(const secret of [
+    'ANDROID_KEYSTORE_BASE64',
+    'ANDROID_GOOGLE_SERVICES_JSON_BASE64',
+    'ANDROID_STORE_PASSWORD',
+    'ANDROID_KEY_ALIAS',
+    'ANDROID_KEY_PASSWORD',
+    'APPLE_TEAM_ID',
+    'IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64',
+    'IOS_DISTRIBUTION_CERTIFICATE_PASSWORD',
+    'IOS_PROVISIONING_PROFILE_BASE64',
+  ]) assert.ok(releaseWorkflow.includes(`secrets.${secret}`),`missing release secret gate: ${secret}`);
+
+  assert.match(releaseWorkflow,/bundleRelease/);
+  assert.match(releaseWorkflow,/jarsigner -verify -strict/);
+  assert.match(releaseWorkflow,/\.aab/);
+  assert.match(releaseWorkflow,/xcodebuild[\s\S]*archive/);
+  assert.match(releaseWorkflow,/xcodebuild -exportArchive/);
+  assert.match(releaseWorkflow,/app-store-connect/);
+  assert.match(releaseWorkflow,/aps-environment/);
+  assert.match(releaseWorkflow,/test "\$APS_ENV" = 'production'/);
+  assert.match(releaseWorkflow,/actions\/upload-artifact@v4/);
 });
