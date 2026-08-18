@@ -21,6 +21,8 @@ test('native tokens are decrypted only inside the service delivery claim',()=>{
   assert.match(sql,/pgp_sym_decrypt\(decode\(d\.token_ciphertext,'base64'\),encryption_key\)/i);
   assert.match(sql,/token_ciphertext=''/);
   assert.doesNotMatch(dispatcher,/native_push_token_encryption_key/);
+  const runtimeConfig=sql.slice(sql.indexOf('create or replace function public.get_native_push_runtime_config'),sql.indexOf('create or replace function public.claim_native_push_deliveries'));
+  assert.doesNotMatch(runtimeConfig,/native_push_token_encryption_key/);
 });
 
 test('notification insert queues eligible active devices and invokes only a secret-authenticated dispatcher',()=>{
@@ -44,11 +46,17 @@ test('APNs and FCM provider paths use short-lived signed credentials with no com
   assert.doesNotMatch(dispatcher,/AIza[0-9A-Za-z_-]{20,}/);
 });
 
-test('provider failures classify retries and expired tokens without leaking notification-authored content',()=>{
+test('provider failures classify retries and invalidate only provider-confirmed dead tokens',()=>{
   assert.match(dispatcher,/UNREGISTERED/);
   assert.match(dispatcher,/BadDeviceToken/);
   assert.match(dispatcher,/Unregistered/);
+  assert.doesNotMatch(dispatcher,/\['BadDeviceToken','DeviceTokenNotForTopic','Unregistered'\]/);
   assert.match(dispatcher,/res\.status === 429 \|\| res\.status >= 500/);
+  assert.match(sql,/elsif p_outcome='expired' then/);
+  assert.doesNotMatch(sql,/p_outcome='expired' or p_status_code in \(404,410\)/i);
+});
+
+test('native push payloads are privacy-safe and route-sanitized',()=>{
   assert.match(dispatcher,/genericBody\(attempt\.category\)/);
   assert.match(dispatcher,/safeEmployeeHref\(attempt\.href\)/);
   assert.doesNotMatch(dispatcher,/notification\.title|notification\.body|authored/i);
