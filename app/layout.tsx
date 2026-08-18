@@ -9,6 +9,7 @@ import ErrorSanitizer from './error-sanitizer';
 import AskAgentBridge from './ask-agent-bridge';
 import EmployeeRootRedirect from './employee-root-redirect';
 import PilotUseRecorder from './pilot-use-recorder';
+import ProductionTelemetry from './production-telemetry';
 import {I18nProvider,LanguageToggle} from '@/lib/i18n';
 
 export const metadata: Metadata = {
@@ -40,6 +41,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           <ErrorSanitizer />
           <EmployeeRootRedirect />
           <PilotUseRecorder />
+          <ProductionTelemetry />
           <div className="global-language-control"><LanguageToggle compact/></div>
           <GlobalActions />
           <AskAgentBridge />
