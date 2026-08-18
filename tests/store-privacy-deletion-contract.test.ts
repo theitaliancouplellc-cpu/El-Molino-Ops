@@ -5,6 +5,8 @@ import fs from 'node:fs';
 const privacy=fs.readFileSync('app/privacy/page.tsx','utf8');
 const support=fs.readFileSync('app/support/page.tsx','utf8');
 const deletion=fs.readFileSync('app/delete-account/page.tsx','utf8');
+const deletionLayout=fs.readFileSync('app/delete-account/layout.tsx','utf8');
+const mfaGate=fs.readFileSync('app/mfa-gate.tsx','utf8');
 const sql=fs.readFileSync('docs/database/account_deletion_requests_v1.sql','utf8');
 
 test('store-facing privacy, support, and external deletion routes are public build artifacts',()=>{
@@ -16,6 +18,15 @@ test('store-facing privacy, support, and external deletion routes are public bui
   assert.match(deletion,/request_account_deletion_external/);
   assert.match(deletion,/does not reveal whether an email is registered/);
   assert.match(deletion,/no revela si un correo está registrado/);
+});
+
+test('public store routes bypass MFA evaluation and deletion has dedicated metadata',()=>{
+  for(const route of ['/privacy','/support','/delete-account']) assert.ok(mfaGate.includes(`'${route}'`),`MFA public-route bypass missing: ${route}`);
+  assert.match(mfaGate,/PUBLIC_STORE_PATHS\.has\(pathname\)/);
+  assert.match(mfaGate,/if\(publicStoreRoute\)return <>{children}<\/>/);
+  assert.match(mfaGate,/if\(publicStoreRoute\)return;[\s\S]*supabase\.auth\.onAuthStateChange/);
+  assert.match(deletionLayout,/Delete Account \| El Molino Ops/);
+  assert.match(deletionLayout,/Request deletion of an El Molino Ops account/);
 });
 
 test('privacy policy covers actual high-level processors and deletion/retention behavior',()=>{
