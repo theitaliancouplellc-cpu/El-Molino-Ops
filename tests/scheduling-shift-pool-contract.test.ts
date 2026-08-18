@@ -8,7 +8,7 @@ const pool=readFileSync('app/schedule/pool/page.tsx','utf8');
 test('published employee shifts can be offered up without abandoning responsibility',()=>{
   assert.match(schedule,/offer_my_shift_to_pool/);
   assert.match(schedule,/You remain responsible for it until another employee is approved/);
-  assert.match(schedule,/>Offer Up</);
+  assert.match(schedule,/t\('Offer Up','Ofrecer Turno'\)/);
   assert.match(schedule,/href=\"\/schedule\/pool\"/);
 });
 
