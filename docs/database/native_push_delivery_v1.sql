@@ -33,7 +33,6 @@ create or replace function public.get_native_push_runtime_config() returns jsonb
 language sql security definer set search_path='pg_catalog','public','vault' as $$
   select jsonb_build_object(
     'webhook_secret',max(decrypted_secret) filter(where name='native_push_webhook_secret'),
-    'token_encryption_key',max(decrypted_secret) filter(where name='native_push_token_encryption_key'),
     'apns_team_id',max(decrypted_secret) filter(where name='native_push_apns_team_id'),
     'apns_key_id',max(decrypted_secret) filter(where name='native_push_apns_key_id'),
     'apns_private_key',max(decrypted_secret) filter(where name='native_push_apns_private_key'),
@@ -45,7 +44,7 @@ language sql security definer set search_path='pg_catalog','public','vault' as $
   )
   from vault.decrypted_secrets
   where name in (
-    'native_push_webhook_secret','native_push_token_encryption_key',
+    'native_push_webhook_secret',
     'native_push_apns_team_id','native_push_apns_key_id','native_push_apns_private_key','native_push_apns_bundle_id','native_push_apns_environment',
     'native_push_fcm_project_id','native_push_fcm_client_email','native_push_fcm_private_key'
   );
@@ -128,7 +127,7 @@ begin
     update public.native_push_delivery_attempts set status='sent',sent_at=now(),completed_at=now(),locked_at=null,status_code=p_status_code,error_class=null,updated_at=now() where id=a.id;
     update public.native_push_devices set last_seen_at=now() where id=a.native_push_device_id;
     next_status:='sent';
-  elsif p_outcome='expired' or p_status_code in (404,410) then
+  elsif p_outcome='expired' then
     update public.native_push_delivery_attempts set status='expired',completed_at=now(),locked_at=null,status_code=p_status_code,error_class=left(coalesce(nullif(p_error_class,''),'device_token_expired'),120),updated_at=now() where id=a.id;
     update public.native_push_devices set disabled_at=coalesce(disabled_at,now()),token_ciphertext='',last_seen_at=now() where id=a.native_push_device_id;
     next_status:='expired';
