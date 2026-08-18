@@ -139,7 +139,7 @@ async function sendApns(attempt: DeliveryAttempt, runtime: RuntimeConfig): Promi
   if (res.ok) return { outcome: 'sent', statusCode: res.status, errorClass: null };
   const body = await res.json().catch(() => ({})) as { reason?: unknown };
   const reason = typeof body.reason === 'string' ? body.reason : 'apns_rejected';
-  if (res.status === 410 || ['BadDeviceToken','DeviceTokenNotForTopic','Unregistered'].includes(reason)) return { outcome: 'expired', statusCode: res.status, errorClass: reason };
+  if (res.status === 410 || ['BadDeviceToken','Unregistered'].includes(reason)) return { outcome: 'expired', statusCode: res.status, errorClass: reason };
   if (res.status === 429 || res.status >= 500) return { outcome: 'retry', statusCode: res.status, errorClass: reason };
   return { outcome: 'permanent_failure', statusCode: res.status, errorClass: reason };
 }
