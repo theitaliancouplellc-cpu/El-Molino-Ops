@@ -15,6 +15,47 @@ concurrency:
 
 jobs:
   build:
+    name: Build and Cloudflare runtime
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://asuvgjxdmxizbnjrccsz.supabase.co
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_gtR8VfsQ5n-FPPbypnYKTw_f2k3Xyrk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Type check
+        run: npx tsc --noEmit
+      - name: Production build and regression suite
+        run: npm run build
+      - name: Build Cloudflare OpenNext worker
+        run: npm run cf:build
+      - name: Validate Cloudflare worker bundle
+        run: npx wrangler deploy --dry-run --outdir /tmp/cloudflare-dry-run
+      - name: Smoke test Cloudflare workerd runtime
+        run: |
+          set -euo pipefail
+          npx wrangler dev --local --port 8787 > /tmp/wrangler.log 2>&1 &
+          WRANGLER_PID=$!
+          trap 'kill "$WRANGLER_PID" 2>/dev/null || true' EXIT
+          for i in {1..60}; do
+            if curl -fsS http://127.0.0.1:8787/api/health > /tmp/health.json; then break; fi
+            sleep 1
+          done
+          test -s /tmp/health.json || { cat /tmp/wrangler.log; exit 1; }
+          cat /tmp/health.json
+          node -e "const h=require('/tmp/health.json'); if(!h.ok || !h.checks?.filter(c=>c.required).every(c=>c.ok)) process.exit(1)"
+          curl -fsS http://127.0.0.1:8787/ > /tmp/root.html
+          grep -q 'El Molino Ops' /tmp/root.html
+
+  browser-acceptance:
+    name: Chromium and WebKit acceptance
     runs-on: ubuntu-latest
     container:
       image: mcr.microsoft.com/playwright:v1.62.1-noble
@@ -35,9 +76,7 @@ jobs:
         run: |
           node -e "const v=require('@playwright/test/package.json').version; if(v!=='1.62.1') throw new Error('Unexpected Playwright version '+v)"
           test -d /ms-playwright
-      - name: Type check
-        run: npx tsc --noEmit
-      - name: Production build and regression suite
+      - name: Build application for browser acceptance
         run: npm run build
       - name: Run production browser acceptance matrix
         run: npx playwright test
@@ -49,19 +88,3 @@ jobs:
           path: playwright-report/
           retention-days: 14
           if-no-files-found: ignore
-      - name: Build Cloudflare OpenNext worker
-        run: npm run cf:build
-      - name: Validate Cloudflare worker bundle
-        run: npx wrangler deploy --dry-run --outdir /tmp/cloudflare-dry-run
-      - name: Smoke test Cloudflare workerd runtime
-        run: |
-          npx wrangler dev --local --port 8787 > /tmp/wrangler.log 2>&1 &
-          for i in {1..60}; do
-            if curl -fsS http://127.0.0.1:8787/api/health > /tmp/health.json; then break; fi
-            sleep 1
-          done
-          test -s /tmp/health.json || { cat /tmp/wrangler.log; exit 1; }
-          cat /tmp/health.json
-          node -e "const h=require('/tmp/health.json'); if(!h.ok || !h.checks?.filter(c=>c.required).every(c=>c.ok)) process.exit(1)"
-          curl -fsS http://127.0.0.1:8787/ > /tmp/root.html
-          grep -q 'El Molino Ops' /tmp/root.html
