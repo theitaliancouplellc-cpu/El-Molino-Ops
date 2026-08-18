@@ -16,3 +16,7 @@ test('low-level coverage arithmetic is not directly callable by staff',()=>{
   assert.match(sql,/revoke all on function public\.schedule_minimum_assigned_coverage\(uuid,uuid,timestamptz,timestamptz\) from public, anon, authenticated/i);
   assert.match(sql,/grant execute on function public\.schedule_minimum_assigned_coverage\(uuid,uuid,timestamptz,timestamptz\) to service_role/i);
 });
+
+test('staffing coverage configuration is manager-only at the table boundary',()=>{
+  assert.match(sql,/create policy schedule_coverage_read[\s\S]*?location_id = public\.current_location_id\(\)[\s\S]*?public\.current_app_role\(\) in \('admin','manager'\)/i);
+});
