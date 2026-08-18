@@ -32,7 +32,10 @@ test('notification insert queues eligible active devices and invokes only a secr
   assert.match(sql,/native_push_webhook_secret/);
   assert.match(sql,/x-el-molino-native-push-secret/);
   assert.match(dispatcher,/x-el-molino-native-push-secret/);
-  assert.match(dispatcher,/suppliedSecret\.length < 24/);
+  assert.match(dispatcher,/async function secretMatches/);
+  assert.match(dispatcher,/supplied\.length < 24/);
+  assert.match(dispatcher,/crypto\.subtle\.digest\('SHA-256'/);
+  assert.match(dispatcher,/await secretMatches\(suppliedSecret, runtime\.webhook_secret\)/);
 });
 
 test('APNs and FCM provider paths use short-lived signed credentials with no committed secret material',()=>{
