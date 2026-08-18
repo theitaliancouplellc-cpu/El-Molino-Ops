@@ -5,8 +5,10 @@ import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { buildClientErrorTelemetry, createCorrelationId } from '@/lib/client-telemetry';
 import { capturePosthogClientError } from '@/lib/posthog-public';
+import { useI18n } from '@/lib/i18n';
 
 export default function ErrorPage({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
+  const {locale}=useI18n();
   const correlationId = useRef(createCorrelationId());
   const reported = useRef(false);
 
@@ -52,11 +54,11 @@ export default function ErrorPage({ error, reset }: { error: Error & { digest?: 
     <main className="auth-wrap">
       <div className="auth-card">
         <div className="onboard-icon"><AlertTriangle /></div>
-        <h1>Something went wrong.</h1>
-        <p>The error was recorded so it can be diagnosed. Your data was not intentionally deleted.</p>
-        <p className="muted">Reference: {reference}</p>
-        <button className="btn" onClick={reset}><RefreshCw size={16} /> Try again</button>
-        <a className="btn ghost" style={{ marginTop: 10, width: '100%' }} href="/">Return home</a>
+        <h1>{locale==='es'?'Algo salió mal.':'Something went wrong.'}</h1>
+        <p>{locale==='es'?'El error se registró para poder diagnosticarlo. Tus datos no se eliminaron intencionalmente.':'The error was recorded so it can be diagnosed. Your data was not intentionally deleted.'}</p>
+        <p className="muted">{locale==='es'?'Referencia':'Reference'}: {reference}</p>
+        <button className="btn" onClick={reset}><RefreshCw size={16} /> {locale==='es'?'Intentar de nuevo':'Try again'}</button>
+        <a className="btn ghost" style={{ marginTop: 10, width: '100%' }} href="/">{locale==='es'?'Volver al inicio':'Return home'}</a>
       </div>
     </main>
   );
