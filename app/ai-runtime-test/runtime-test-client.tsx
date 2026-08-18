@@ -3,12 +3,14 @@
 import { useEffect,useState } from 'react';
 import { runLocalBrowserAI } from '@/lib/local-ai-client';
 import type { LocalAIMessage } from '@/lib/local-ai-prompt';
+import { useI18n } from '@/lib/i18n';
 
 type Result={ok:boolean;text?:string;model?:string;device?:string;error?:string};
 
 declare global{interface Window{__EL_MOLINO_AI_BROWSER_SMOKE__?:Result}}
 
 export default function BrowserAIRuntimeTest(){
+  const {locale}=useI18n();
   const [result,setResult]=useState<Result>({ok:false});
   useEffect(()=>{
     let live=true;
@@ -30,5 +32,5 @@ export default function BrowserAIRuntimeTest(){
     })();
     return()=>{live=false};
   },[]);
-  return <main style={{fontFamily:'system-ui',padding:24}}><h1>AI Runtime Test</h1><pre id="ai-runtime-result">{JSON.stringify(result)}</pre></main>;
+  return <main style={{fontFamily:'system-ui',padding:24}}><h1>{locale==='es'?'Prueba de ejecución de IA':'AI Runtime Test'}</h1><pre id="ai-runtime-result">{JSON.stringify(result)}</pre></main>;
 }

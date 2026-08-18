@@ -2,8 +2,10 @@
 
 import {useEffect,useState} from 'react';
 import {supabase} from '@/lib/supabase';
+import {useI18n} from '@/lib/i18n';
 
 export default function ScheduleRequestsLayout({children}:{children:React.ReactNode}){
+ const {locale}=useI18n();
  const [ready,setReady]=useState(false);
  useEffect(()=>{
   let mounted=true;
@@ -18,6 +20,6 @@ export default function ScheduleRequestsLayout({children}:{children:React.ReactN
   })();
   return()=>{mounted=false}
  },[]);
- if(!ready)return <div className="full-loader"><span>Opening requests…</span></div>;
+ if(!ready)return <div className="full-loader"><span>{locale==='es'?'Abriendo solicitudes…':'Opening requests…'}</span></div>;
  return children;
 }

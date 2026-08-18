@@ -2,10 +2,12 @@
 
 import {useEffect,useState} from 'react';
 import {supabase} from '@/lib/supabase';
+import {useI18n} from '@/lib/i18n';
 
 export default function ShiftPoolLayout({children}:{children:React.ReactNode}){
+ const {locale}=useI18n();
  const [ready,setReady]=useState(false);
  useEffect(()=>{let mounted=true;void(async()=>{const {data:u}=await supabase.auth.getUser();if(!mounted)return;if(!u.user){location.href='/';return}const {data:p}=await supabase.from('profiles').select('app_role').eq('id',u.user.id).maybeSingle();if(!mounted)return;if(p?.app_role==='employee'){location.replace(`/employee/shift-pool${location.search||''}`);return}setReady(true)})();return()=>{mounted=false}},[]);
- if(!ready)return <div className="full-loader"><span>Opening Shift Pool…</span></div>;
+ if(!ready)return <div className="full-loader"><span>{locale==='es'?'Abriendo la Bolsa de Turnos…':'Opening Shift Pool…'}</span></div>;
  return children;
 }
