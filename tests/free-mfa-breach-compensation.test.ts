@@ -29,26 +29,31 @@ test('authenticated application runtime requires TOTP plus approved-factor statu
   assert.match(layout,/<NativeRuntime \/>/);
 });
 
-test('first-factor bootstrap is bound to an existing trusted session, not any aal2 factor',()=>{
+test('bootstrap is bound to one pre-existing trusted session and cannot be recreated by a new password login',()=>{
   assert.match(migration,/private\.mfa_approved_factors/);
   assert.match(migration,/private\.mfa_bootstrap_sessions/);
   assert.match(migration,/auth\.sessions/);
-  assert.match(migration,/s\.factor_id/);
   assert.match(migration,/row_number\(\) over\(partition by s\.user_id order by s\.updated_at desc,s\.created_at desc\)/);
   assert.match(migration,/where ranked\.rn=1/);
+  assert.match(migration,/interval '14 days'/);
+  assert.match(migration,/current_mfa_bootstrap_allowed/);
+  assert.match(migration,/session_id/);
+  assert.match(migration,/not exists\([\s\S]*private\.mfa_approved_factors/);
   assert.match(migration,/finalize_my_mfa_bootstrap/);
   assert.match(migration,/trusted bootstrap session required/);
   assert.match(migration,/MFA_FACTOR_NOT_APPROVED/);
   assert.doesNotMatch(migration,/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i);
 });
 
-test('Data API, Realtime-backed tables and Storage require the approved factor',()=>{
+test('server enforcement blocks new aal1 sessions while preserving only trusted bootstrap or approved factor access',()=>{
   assert.match(migration,/pgrst\.db_pre_request = 'public\.enforce_el_molino_aal2_request'/);
   assert.match(migration,/coalesce\(claims->>'role',''\) <> 'authenticated' then return/);
+  assert.match(migration,/if public\.current_mfa_access_allowed\(\) then return/);
   assert.match(migration,/claims->>'aal','aal1'\) <> 'aal2'/);
+  assert.match(migration,/current_mfa_factor_approved\(\) or public\.current_mfa_bootstrap_allowed\(\)/);
   assert.match(migration,/as restrictive for all to authenticated/);
-  assert.match(migration,/current_mfa_factor_approved/);
+  assert.match(migration,/current_mfa_access_allowed/);
   assert.match(migration,/storage\.objects/);
   assert.match(migration,/MFA_REQUIRED/);
-  assert.doesNotMatch(migration,/create policy[^;]*to anon[^;]*current_mfa_factor_approved/i);
+  assert.doesNotMatch(migration,/create policy[^;]*to anon[^;]*current_mfa_access_allowed/i);
 });
