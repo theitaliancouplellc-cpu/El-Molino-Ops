@@ -45,6 +45,20 @@ function response(status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
 }
 function normalizePem(value: string) { return value.replace(/\\n/g, '\n').trim(); }
+
+async function secretMatches(supplied: string, expected: string | null | undefined) {
+  if (!expected || supplied.length < 24) return false;
+  const encoder = new TextEncoder();
+  const [a, b] = await Promise.all([
+    crypto.subtle.digest('SHA-256', encoder.encode(supplied)),
+    crypto.subtle.digest('SHA-256', encoder.encode(expected)),
+  ]);
+  const av = new Uint8Array(a), bv = new Uint8Array(b);
+  let diff = 0;
+  for (let i = 0; i < av.length; i++) diff |= av[i] ^ bv[i];
+  return diff === 0;
+}
+
 function safeEmployeeHref(value: unknown) {
   const fallback = '/employee/notifications';
   if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//') || /[\\\u0000-\u001f\u007f]/.test(value)) return fallback;
@@ -113,6 +127,7 @@ async function fcmAccessToken(runtime: RuntimeConfig) {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }),
+    signal: AbortSignal.timeout(10000),
   });
   const tokenBody = await tokenResponse.json().catch(() => ({})) as { access_token?: unknown; expires_in?: unknown };
   if (!tokenResponse.ok || typeof tokenBody.access_token !== 'string') throw Object.assign(new Error('fcm_oauth_failed'), { statusCode: tokenResponse.status });
@@ -135,6 +150,7 @@ async function sendApns(attempt: DeliveryAttempt, runtime: RuntimeConfig): Promi
       'content-type': 'application/json',
     },
     body: JSON.stringify({ aps: { alert: { title: 'El Molino', body: genericBody(attempt.category) }, sound: 'default' }, ...data }),
+    signal: AbortSignal.timeout(10000),
   });
   if (res.ok) return { outcome: 'sent', statusCode: res.status, errorClass: null };
   const body = await res.json().catch(() => ({})) as { reason?: unknown };
@@ -155,6 +171,7 @@ async function sendFcm(attempt: DeliveryAttempt, runtime: RuntimeConfig): Promis
       data,
       android: { priority: data.priority === 'high' || data.priority === 'critical' ? 'high' : 'normal', ttl: '86400s' },
     } }),
+    signal: AbortSignal.timeout(10000),
   });
   if (res.ok) return { outcome: 'sent', statusCode: res.status, errorClass: null };
   const body = await res.json().catch(() => ({}));
@@ -171,6 +188,9 @@ function classifyThrown(error: unknown): ProviderResult {
 
 Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') return response(405, { ok: false, error: 'method_not_allowed' });
+  const declared = Number(req.headers.get('content-length') || '0');
+  if (Number.isFinite(declared) && declared > 4096) return response(413, { ok: false, error: 'request_too_large' });
+
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   if (!supabaseUrl || !serviceRoleKey) return response(503, { ok: false, error: 'runtime_not_configured' });
@@ -179,7 +199,7 @@ Deno.serve(async (req: Request) => {
   if (runtimeResult.error) return response(503, { ok: false, error: 'native_push_config_unavailable' });
   const runtime = (runtimeResult.data || {}) as RuntimeConfig;
   const suppliedSecret = req.headers.get('x-el-molino-native-push-secret') || '';
-  if (!runtime.webhook_secret || suppliedSecret.length < 24 || suppliedSecret !== runtime.webhook_secret) return response(401, { ok: false, error: 'unauthorized' });
+  if (!(await secretMatches(suppliedSecret, runtime.webhook_secret))) return response(401, { ok: false, error: 'unauthorized' });
 
   let body: { notification_id?: unknown } = {};
   try { body = await req.json(); } catch { body = {}; }

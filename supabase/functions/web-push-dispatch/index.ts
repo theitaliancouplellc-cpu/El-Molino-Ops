@@ -34,6 +34,19 @@ function response(status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
 }
 
+async function secretMatches(supplied: string, expected: string | null | undefined) {
+  if (!expected || supplied.length < 24) return false;
+  const encoder = new TextEncoder();
+  const [a, b] = await Promise.all([
+    crypto.subtle.digest('SHA-256', encoder.encode(supplied)),
+    crypto.subtle.digest('SHA-256', encoder.encode(expected)),
+  ]);
+  const av = new Uint8Array(a), bv = new Uint8Array(b);
+  let diff = 0;
+  for (let i = 0; i < av.length; i++) diff |= av[i] ^ bv[i];
+  return diff === 0;
+}
+
 function safeEmployeeHref(value: unknown) {
   const fallback = '/employee/notifications';
   if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//') || /[\\\u0000-\u001f\u007f]/.test(value)) return fallback;
@@ -78,6 +91,8 @@ function outcomeFor(error: unknown) {
 
 Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') return response(405, { ok: false, error: 'method_not_allowed' });
+  const declared = Number(req.headers.get('content-length') || '0');
+  if (Number.isFinite(declared) && declared > 4096) return response(413, { ok: false, error: 'request_too_large' });
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -91,7 +106,7 @@ Deno.serve(async (req: Request) => {
   if (runtimeResult.error) return response(503, { ok: false, error: 'push_config_unavailable' });
   const runtime = (runtimeResult.data || {}) as RuntimeConfig;
   const suppliedSecret = req.headers.get('x-el-molino-push-secret') || '';
-  if (!runtime.webhook_secret || suppliedSecret.length < 24 || suppliedSecret !== runtime.webhook_secret) {
+  if (!(await secretMatches(suppliedSecret, runtime.webhook_secret))) {
     return response(401, { ok: false, error: 'unauthorized' });
   }
   if (!runtime.public_key || !runtime.private_key || !runtime.subject) {
@@ -120,7 +135,7 @@ Deno.serve(async (req: Request) => {
       priority: ['low', 'normal', 'high', 'critical'].includes(String(attempt.priority)) ? attempt.priority : 'normal',
     });
     try {
-      const delivered = await webpush.sendNotification(attempt.subscription, payload, { TTL: 86400 });
+      const delivered = await webpush.sendNotification(attempt.subscription, payload, { TTL: 86400, timeout: 10000 });
       await supabase.rpc('complete_web_push_delivery', {
         p_attempt_id: attempt.attempt_id,
         p_outcome: 'sent',
