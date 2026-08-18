@@ -12,9 +12,25 @@
     "cf:build": "opennextjs-cloudflare build",
     "cf:preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "cf:deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
-    "cf:typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
+    "cf:typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
+    "mobile:sync": "node scripts/capacitor-sync.mjs",
+    "mobile:doctor": "cap doctor",
+    "mobile:android": "cap open android",
+    "mobile:ios": "cap open ios"
   },
   "dependencies": {
+    "@capacitor/android": "8.5.0",
+    "@capacitor/app": "8.1.1",
+    "@capacitor/core": "8.5.0",
+    "@capacitor/haptics": "8.0.2",
+    "@capacitor/ios": "8.5.0",
+    "@capacitor/keyboard": "8.0.5",
+    "@capacitor/network": "8.0.1",
+    "@capacitor/preferences": "8.0.1",
+    "@capacitor/push-notifications": "8.1.2",
+    "@capacitor/share": "8.0.1",
+    "@capacitor/splash-screen": "8.0.2",
+    "@capacitor/status-bar": "8.0.3",
     "@huggingface/transformers": "3.7.3",
     "@supabase/supabase-js": "2.112.3",
     "lucide-react": "0.468.0",
@@ -23,6 +39,7 @@
     "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "@capacitor/cli": "8.5.0",
     "@opennextjs/cloudflare": "1.20.2",
     "@playwright/test": "1.62.1",
     "@types/node": "22.20.1",
@@ -49,6 +66,7 @@
     "sharp": "0.35.0",
     "source-map-js": "1.2.1",
     "tslib": "2.8.1",
-    "undici-types": "6.21.0"
+    "undici-types": "6.21.0",
+    "uuid": "11.1.1"
   }
 }

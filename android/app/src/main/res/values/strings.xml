@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">El Molino Ops</string>
+    <string name="title_activity_main">El Molino Ops</string>
+    <string name="package_name">com.elmolino.ops</string>
+    <string name="custom_url_scheme">com.elmolino.ops</string>
+</resources>

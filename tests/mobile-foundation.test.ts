@@ -1,0 +1,54 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import test from 'node:test';
+import { nativeRouteFromUrl } from '../lib/native-navigation';
+
+test('native deep links accept only the permanent app scheme and production origin', () => {
+  assert.equal(nativeRouteFromUrl('elmolino://ops/employee/schedule?week=current'), '/employee/schedule?week=current');
+  assert.equal(nativeRouteFromUrl('https://el-molino-ops.vercel.app/schedule#today'), '/schedule#today');
+  assert.equal(nativeRouteFromUrl('https://evil.example/schedule'), null);
+  assert.equal(nativeRouteFromUrl('elmolino://attacker/schedule'), null);
+  assert.equal(nativeRouteFromUrl('not a url'), null);
+});
+
+test('Capacitor foundation is permanent, HTTPS-only, current-targeted, and mounted', async () => {
+  const config = await readFile(new URL('../capacitor.config.ts', import.meta.url), 'utf8');
+  const androidVars = await readFile(new URL('../android/variables.gradle', import.meta.url), 'utf8');
+  const manifest = await readFile(new URL('../android/app/src/main/AndroidManifest.xml', import.meta.url), 'utf8');
+  const androidBuild = await readFile(new URL('../android/app/build.gradle', import.meta.url), 'utf8');
+  const plist = await readFile(new URL('../ios/App/App/Info.plist', import.meta.url), 'utf8');
+  const project = await readFile(new URL('../ios/App/App.xcodeproj/project.pbxproj', import.meta.url), 'utf8');
+  const swiftPackage = await readFile(new URL('../ios/App/CapApp-SPM/Package.swift', import.meta.url), 'utf8');
+  const privacyManifest = await readFile(new URL('../ios/App/App/PrivacyInfo.xcprivacy', import.meta.url), 'utf8');
+  const mobileCi = await readFile(new URL('../.github/workflows/mobile-ci.yml', import.meta.url), 'utf8');
+  const androidIgnore = await readFile(new URL('../android/.gitignore', import.meta.url), 'utf8');
+  const iosIgnore = await readFile(new URL('../ios/.gitignore', import.meta.url), 'utf8');
+  const runtime = await readFile(new URL('../app/native-runtime.tsx', import.meta.url), 'utf8');
+  const layout = await readFile(new URL('../app/layout.tsx', import.meta.url), 'utf8');
+  assert.match(config, /appId: 'com\.elmolino\.ops'/);
+  assert.match(config, /https:\/\/el-molino-ops\.vercel\.app/);
+  assert.match(config, /cleartext: false/);
+  assert.match(androidVars, /compileSdkVersion = 36/);
+  assert.match(androidVars, /targetSdkVersion = 36/);
+  assert.match(manifest, /android:allowBackup="false"/);
+  assert.match(manifest, /android:usesCleartextTraffic="false"/);
+  assert.match(manifest, /android:scheme="elmolino" android:host="ops"/);
+  assert.match(androidBuild, /EL_MOLINO_BUILD_NUMBER/);
+  assert.match(plist, /WKAppBoundDomains/);
+  assert.match(plist, /NSCameraUsageDescription/);
+  assert.match(project, /IPHONEOS_DEPLOYMENT_TARGET = 15\.0/);
+  assert.match(project, /PRODUCT_BUNDLE_IDENTIFIER = com\.elmolino\.ops/);
+  assert.doesNotMatch(swiftPackage, /\\node_modules\\/);
+  assert.match(privacyManifest, /NSPrivacyAccessedAPICategoryUserDefaults/);
+  assert.match(privacyManifest, /CA92\.1/);
+  assert.match(project, /PrivacyInfo\.xcprivacy in Resources/);
+  assert.match(mobileCi, /runs-on: macos-26/);
+  assert.match(mobileCi, /bundleRelease/);
+  assert.match(mobileCi, /CODE_SIGNING_ALLOWED=NO/);
+  assert.match(mobileCi, /CURRENT_PROJECT_VERSION=\$EL_MOLINO_BUILD_NUMBER/);
+  assert.match(androidIgnore, /^\*\.jks$/m);
+  assert.match(androidIgnore, /^google-services\.json$/m);
+  assert.match(iosIgnore, /^\*\.p12$/m);
+  for (const behavior of ['appStateChange', 'appUrlOpen', 'backButton', 'networkStatusChange', 'keyboardWillShow']) assert.match(runtime, new RegExp(behavior));
+  assert.match(layout, /<NativeRuntime/);
+});
