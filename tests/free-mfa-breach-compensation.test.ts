@@ -44,7 +44,7 @@ test('first-factor bootstrap is bound to an existing trusted session, not any aa
 
 test('Data API, Realtime-backed tables and Storage require the approved factor',()=>{
   assert.match(migration,/pgrst\.db_pre_request = 'public\.enforce_el_molino_aal2_request'/);
-  assert.match(migration,/claims->>'role'[\s\S]*= 'authenticated'/);
+  assert.match(migration,/coalesce\(claims->>'role',''\) <> 'authenticated' then return/);
   assert.match(migration,/claims->>'aal','aal1'\) <> 'aal2'/);
   assert.match(migration,/as restrictive for all to authenticated/);
   assert.match(migration,/current_mfa_factor_approved/);
