@@ -14,7 +14,7 @@ try {
   const normalized = source.replaceAll('..\\..\\..\\node_modules\\', '../../../node_modules/');
   if (normalized !== source) await writeFile(packagePath, normalized, 'utf8');
 } catch (error) {
-  if (requestedPlatforms.includes('android')) throw error;
+  if (!requestedPlatforms.includes('android')) throw error;
 }
 
 // Remote notifications are a native capability, not web content. Keep the
