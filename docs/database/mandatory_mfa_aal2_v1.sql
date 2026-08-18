@@ -9,11 +9,11 @@
 --      factor even if it bypasses the client and enrolls TOTP directly.
 --
 -- Bootstrap:
---   The only current account is the pre-release admin. Existing admin sessions
---   at migration time are placed in a short bootstrap window. Once one of those
---   same session IDs is upgraded to aal2, finalize_my_mfa_bootstrap() approves
---   the factor. New sessions created from a leaked password are not bootstrap
---   sessions and cannot approve their own factors.
+--   The only current account is the pre-release admin. Only that user's single
+--   most recently active session at migration time is placed in a short bootstrap
+--   window. Once that same session ID is upgraded to aal2,
+--   finalize_my_mfa_bootstrap() approves the factor. A new leaked-password session
+--   gets a different session ID and cannot approve its own factor.
 
 create table if not exists private.mfa_approved_factors (
   factor_id uuid primary key references auth.mfa_factors(id) on delete cascade,
@@ -37,20 +37,25 @@ create table if not exists private.mfa_bootstrap_sessions (
 revoke all on table private.mfa_approved_factors from public, anon, authenticated;
 revoke all on table private.mfa_bootstrap_sessions from public, anon, authenticated;
 
--- Trust only sessions that already existed for the sole pre-release admin when
--- this migration is activated. The bootstrap expires quickly and cannot be
--- recreated through a public RPC.
+-- Trust only the single most recently active session that already existed for
+-- each pre-release admin. This bootstrap expires quickly and cannot be recreated
+-- through a public RPC.
 insert into private.mfa_bootstrap_sessions(session_id,user_id,expires_at)
-select s.id,s.user_id,now()+interval '24 hours'
-from auth.sessions s
-join public.profiles p on p.id=s.user_id
-where p.app_role='admin'
-  and s.updated_at >= now()-interval '7 days'
+select ranked.id,ranked.user_id,now()+interval '24 hours'
+from (
+  select s.id,s.user_id,
+         row_number() over(partition by s.user_id order by s.updated_at desc,s.created_at desc) as rn
+  from auth.sessions s
+  join public.profiles p on p.id=s.user_id
+  where p.app_role='admin'
+    and s.updated_at >= now()-interval '7 days'
+) ranked
+where ranked.rn=1
 on conflict(session_id) do nothing;
 
--- If the admin happened to complete TOTP enrollment after the UI deployment but
--- before this migration was activated, trust that factor because it belongs to
--- one of the already-existing inspected bootstrap sessions.
+-- If the admin completes TOTP enrollment after the UI deployment but before this
+-- migration is activated, trust that factor only when it belongs to the same
+-- pre-existing bootstrap session selected above.
 insert into private.mfa_approved_factors(factor_id,user_id,approved_by,approval_source)
 select distinct s.factor_id,s.user_id,s.user_id,'bootstrap'
 from auth.sessions s
@@ -190,8 +195,9 @@ begin
 
   -- An unapproved factor may only inspect its security status. A trusted
   -- pre-existing bootstrap session may additionally finalize its own factor.
-  if path='rpc/my_mfa_access_status' then return; end if;
-  if bootstrap_ok and path='rpc/finalize_my_mfa_bootstrap' then return; end if;
+  -- Match by suffix as request.path representation may include a leading slash.
+  if right(path,length('rpc/my_mfa_access_status'))='rpc/my_mfa_access_status' then return; end if;
+  if bootstrap_ok and right(path,length('rpc/finalize_my_mfa_bootstrap'))='rpc/finalize_my_mfa_bootstrap' then return; end if;
 
   raise sqlstate 'PGRST' using
     message = json_build_object('code','MFA_FACTOR_NOT_APPROVED','message','This authenticator factor is not approved for El Molino Ops.')::text,
