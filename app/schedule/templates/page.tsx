@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { useI18n } from '@/lib/i18n';
 import styles from '../../ops-tools.module.css';
 import { businessDateInZone } from '@/lib/intermediate-hardening';
 import { addDateDays, dateDayOfWeek } from '@/lib/scheduling-engine';
@@ -17,6 +18,8 @@ type Role = { id: string; name: string };
 const mondayOf = (date: string) => addDateDays(date, -((dateDayOfWeek(date) + 6) % 7));
 
 export default function ScheduleTemplatesPage() {
+  const { locale } = useI18n();
+  const t = (en: string, es: string) => locale === 'es' ? es : en;
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -60,7 +63,7 @@ export default function ScheduleTemplatesPage() {
       .eq('id', userData.user.id)
       .single();
     if (result.error || !result.data?.location_id) {
-      setMessage('Could not load schedule templates.');
+      setMessage(t('Could not load schedule templates.','No se pudieron cargar las plantillas de horarios.'));
       setReady(true);
       return;
     }
@@ -127,7 +130,7 @@ export default function ScheduleTemplatesPage() {
         setSelectedTemplate(templateResult.data[0].id);
       }
     } catch (error: any) {
-      setMessage(error?.message || 'Could not load schedule templates.');
+      setMessage(error?.message || t('Could not load schedule templates.','No se pudieron cargar las plantillas de horarios.'));
     } finally {
       setBusy(false);
     }
@@ -147,7 +150,7 @@ export default function ScheduleTemplatesPage() {
     if (
       shifts.length &&
       !window.confirm(
-        'The target week already has shifts. Whole-week Copy requires an empty target. Continue and let the database validate it?',
+        t('The target week already has shifts. Whole-week Copy requires an empty target. Continue and let the database validate it?','La semana de destino ya tiene turnos. Copiar la semana completa requiere un destino vacío. ¿Continuar y dejar que la base de datos lo valide?'),
       )
     ) {
       return;
@@ -159,7 +162,7 @@ export default function ScheduleTemplatesPage() {
       p_expected_revision: period.revision,
       p_copy_assignments: copyAssignments,
     });
-    setMessage(error ? error.message : `Copied ${(data as any)?.copied ?? 0} shifts into this week.`);
+    setMessage(error ? error.message : `${t('Copied','Se copiaron')} ${(data as any)?.copied ?? 0} ${t('shifts into this week.','turnos en esta semana.')}`);
     await load();
     setBusy(false);
   }
@@ -174,7 +177,7 @@ export default function ScheduleTemplatesPage() {
       p_description: templateForm.description.trim() || null,
       p_include_assignments: templateForm.include_assignments,
     });
-    setMessage(error ? error.message : `Template saved${data ? ' successfully.' : '.'}`);
+    setMessage(error ? error.message : data?t('Template saved successfully.','Plantilla guardada correctamente.'):t('Template saved.','Plantilla guardada.'));
     if (!error) setTemplateForm({ ...templateForm, name: '', description: '' });
     await load();
     setBusy(false);
@@ -184,7 +187,7 @@ export default function ScheduleTemplatesPage() {
     if (!period || !selectedTemplate || busy) return;
     if (
       applyMode === 'replace' &&
-      !window.confirm('Replace will remove the current draft shifts and rebuild the week from this template. Continue?')
+      !window.confirm(t('Replace will remove the current draft shifts and rebuild the week from this template. Continue?','Reemplazar eliminará los turnos actuales del borrador y reconstruirá la semana con esta plantilla. ¿Continuar?'))
     ) {
       return;
     }
@@ -196,7 +199,7 @@ export default function ScheduleTemplatesPage() {
       p_mode: applyMode,
       p_copy_assignments: applyAssignments,
     });
-    setMessage(error ? error.message : `Template applied: ${(data as any)?.copied ?? 0} shifts.`);
+    setMessage(error ? error.message : `${t('Template applied:','Plantilla aplicada:')} ${(data as any)?.copied ?? 0} ${t('shifts.','turnos.')}`);
     await load();
     setBusy(false);
   }
@@ -210,45 +213,45 @@ export default function ScheduleTemplatesPage() {
       p_copy_assignment: repeatAssignment,
     });
     const count = Number((data as any)?.copied || 0);
-    setMessage(error ? error.message : `Repeated ${count} shift${count === 1 ? '' : 's'}.`);
+    setMessage(error ? error.message : `${t('Repeated','Se repitieron')} ${count} ${count === 1 ? t('shift','turno') : t('shifts','turnos')}.`);
     if (!error) setRepeatDates([]);
     await load();
     setBusy(false);
   }
 
-  const employeeName = (id: string | null) => employees.find((item) => item.id === id)?.full_name || 'Open';
-  const roleName = (id: string | null) => roles.find((item) => item.id === id)?.name || 'Role';
+  const employeeName = (id: string | null) => employees.find((item) => item.id === id)?.full_name || t('Open','Abierto');
+  const roleName = (id: string | null) => roles.find((item) => item.id === id)?.name || t('Role','Puesto');
   const selectedShift = shifts.find((item) => item.id === repeatShift);
   const selectedDate = selectedShift ? new Date(selectedShift.starts_at).toISOString().slice(0, 10) : '';
 
-  if (!ready) return <div className="full-loader"><span>Opening templates…</span></div>;
+  if (!ready) return <div className="full-loader"><span>{t('Opening templates…','Abriendo plantillas…')}</span></div>;
 
   return (
     <main className={styles.page}>
       <div className={styles.top}>
         <div>
-          <h1>Copy & Templates</h1>
-          <p>Copy a whole schedule, save reusable named layouts, merge or replace a week, and repeat individual shifts.</p>
+          <h1>{t('Copy & Templates','Copiar y Plantillas')}</h1>
+          <p>{t('Copy a whole schedule, save reusable named layouts, merge or replace a week, and repeat individual shifts.','Copia un horario completo, guarda diseños reutilizables, combina o reemplaza una semana y repite turnos individuales.')}</p>
         </div>
-        <Link className={styles.back} href="/schedule">Back to Schedule</Link>
+        <Link className={styles.back} href="/schedule">{t('Back to Schedule','Volver al Horario')}</Link>
       </div>
 
-      {message && <div className={message.toLowerCase().includes('could not') ? styles.error : styles.notice}>{message}</div>}
+      {message && <div className={message.toLowerCase().includes('could not') || message.toLowerCase().includes('no se pudieron') ? styles.error : styles.notice}>{message}</div>}
 
       {!canManage ? (
-        <div className={styles.error}>Manager access is required.</div>
+        <div className={styles.error}>{t('Manager access is required.','Se requiere acceso gerencial.')}</div>
       ) : (
         <>
           <section className={styles.section}>
             <div className={styles.card}>
               <div className={styles.entryHead}>
                 <div>
-                  <h2>Target week · {weekStart}</h2>
-                  <small>{period?.status || 'draft'} · revision {period?.revision ?? 0} · {shifts.length} current shifts</small>
+                  <h2>{t('Target week','Semana de destino')} · {weekStart}</h2>
+                  <small>{period?.status || 'draft'} · {t('revision','revisión')} {period?.revision ?? 0} · {shifts.length} {t('current shifts','turnos actuales')}</small>
                 </div>
                 <div className={styles.actions}>
-                  <button className={`${styles.button} ${styles.secondary}`} disabled={busy} onClick={() => changeWeek(-7)}>Previous</button>
-                  <button className={`${styles.button} ${styles.secondary}`} disabled={busy} onClick={() => changeWeek(7)}>Next</button>
+                  <button className={`${styles.button} ${styles.secondary}`} disabled={busy} onClick={() => changeWeek(-7)}>{t('Previous','Anterior')}</button>
+                  <button className={`${styles.button} ${styles.secondary}`} disabled={busy} onClick={() => changeWeek(7)}>{t('Next','Siguiente')}</button>
                 </div>
               </div>
             </div>
@@ -256,49 +259,49 @@ export default function ScheduleTemplatesPage() {
 
           <section className={styles.section}>
             <div className={styles.card}>
-              <h2>Copy another week</h2>
-              <p>Whole-week copy requires an empty draft target. Choose whether to keep employee assignments or copy the structure as open shifts.</p>
+              <h2>{t('Copy another week','Copiar otra semana')}</h2>
+              <p>{t('Whole-week copy requires an empty draft target. Choose whether to keep employee assignments or copy the structure as open shifts.','Copiar la semana completa requiere un borrador de destino vacío. Elige conservar asignaciones o copiar la estructura como turnos abiertos.')}</p>
               <div className={styles.formGrid}>
                 <label className={styles.field}>
-                  <span>Source week</span>
+                  <span>{t('Source week','Semana de origen')}</span>
                   <select value={sourcePeriod} onChange={(event) => setSourcePeriod(event.target.value)}>
-                    <option value="">Choose week</option>
+                    <option value="">{t('Choose week','Elegir semana')}</option>
                     {periods.filter((item) => item.id !== period?.id).map((item) => (
                       <option key={item.id} value={item.id}>{item.starts_on} · {item.status}</option>
                     ))}
                   </select>
                 </label>
                 <label className={styles.field}>
-                  <span>Keep assignments</span>
+                  <span>{t('Keep assignments','Conservar asignaciones')}</span>
                   <input type="checkbox" checked={copyAssignments} onChange={(event) => setCopyAssignments(event.target.checked)} />
                 </label>
               </div>
               <div className={styles.actions}>
-                <button className={styles.button} disabled={busy || !sourcePeriod || period?.status !== 'draft'} onClick={copyWeek}>Copy Week</button>
+                <button className={styles.button} disabled={busy || !sourcePeriod || period?.status !== 'draft'} onClick={copyWeek}>{t('Copy Week','Copiar Semana')}</button>
               </div>
             </div>
           </section>
 
           <section className={styles.section}>
             <div className={styles.card}>
-              <h2>Save this week as a named template</h2>
+              <h2>{t('Save this week as a named template','Guardar esta semana como plantilla')}</h2>
               <form onSubmit={saveTemplate}>
                 <div className={styles.formGrid}>
                   <label className={styles.field}>
-                    <span>Template name</span>
-                    <input maxLength={120} value={templateForm.name} onChange={(event) => setTemplateForm({ ...templateForm, name: event.target.value })} placeholder="Summer FOH" />
+                    <span>{t('Template name','Nombre de plantilla')}</span>
+                    <input maxLength={120} value={templateForm.name} onChange={(event) => setTemplateForm({ ...templateForm, name: event.target.value })} placeholder={t('Summer FOH','Verano FOH')} />
                   </label>
                   <label className={styles.field}>
-                    <span>Description</span>
+                    <span>{t('Description','Descripción')}</span>
                     <input maxLength={2000} value={templateForm.description} onChange={(event) => setTemplateForm({ ...templateForm, description: event.target.value })} />
                   </label>
                   <label className={styles.field}>
-                    <span>Remember employee assignments</span>
+                    <span>{t('Remember employee assignments','Recordar asignaciones de empleados')}</span>
                     <input type="checkbox" checked={templateForm.include_assignments} onChange={(event) => setTemplateForm({ ...templateForm, include_assignments: event.target.checked })} />
                   </label>
                 </div>
                 <div className={styles.actions}>
-                  <button className={styles.button} disabled={busy || !period}>Save Template</button>
+                  <button className={styles.button} disabled={busy || !period}>{t('Save Template','Guardar Plantilla')}</button>
                 </div>
               </form>
             </div>
@@ -306,42 +309,42 @@ export default function ScheduleTemplatesPage() {
 
           <section className={styles.section}>
             <div className={styles.card}>
-              <h2>Apply named template</h2>
+              <h2>{t('Apply named template','Aplicar plantilla guardada')}</h2>
               <div className={styles.formGrid}>
                 <label className={styles.field}>
-                  <span>Template</span>
+                  <span>{t('Template','Plantilla')}</span>
                   <select value={selectedTemplate} onChange={(event) => setSelectedTemplate(event.target.value)}>
-                    <option value="">Choose template</option>
+                    <option value="">{t('Choose template','Elegir plantilla')}</option>
                     {templates.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                   </select>
                 </label>
                 <label className={styles.field}>
-                  <span>Mode</span>
+                  <span>{t('Mode','Modo')}</span>
                   <select value={applyMode} onChange={(event) => setApplyMode(event.target.value as 'merge' | 'replace')}>
-                    <option value="merge">Merge with existing draft</option>
-                    <option value="replace">Replace existing draft</option>
+                    <option value="merge">{t('Merge with existing draft','Combinar con borrador existente')}</option>
+                    <option value="replace">{t('Replace existing draft','Reemplazar borrador existente')}</option>
                   </select>
                 </label>
                 <label className={styles.field}>
-                  <span>Use saved assignments</span>
+                  <span>{t('Use saved assignments','Usar asignaciones guardadas')}</span>
                   <input type="checkbox" checked={applyAssignments} onChange={(event) => setApplyAssignments(event.target.checked)} />
                 </label>
               </div>
-              {selectedTemplate && <p>{templates.find((item) => item.id === selectedTemplate)?.description || 'No template description.'}</p>}
+              {selectedTemplate && <p>{templates.find((item) => item.id === selectedTemplate)?.description || t('No template description.','Sin descripción de plantilla.')}</p>}
               <div className={styles.actions}>
-                <button className={styles.button} disabled={busy || !selectedTemplate || period?.status !== 'draft'} onClick={applyTemplate}>Apply Template</button>
+                <button className={styles.button} disabled={busy || !selectedTemplate || period?.status !== 'draft'} onClick={applyTemplate}>{t('Apply Template','Aplicar Plantilla')}</button>
               </div>
             </div>
           </section>
 
           <section className={styles.section}>
             <div className={styles.card}>
-              <h2>Repeat / duplicate one shift</h2>
+              <h2>{t('Repeat / duplicate one shift','Repetir / duplicar un turno')}</h2>
               <div className={styles.formGrid}>
                 <label className={styles.field}>
-                  <span>Shift</span>
+                  <span>{t('Shift','Turno')}</span>
                   <select value={repeatShift} onChange={(event) => { setRepeatShift(event.target.value); setRepeatDates([]); }}>
-                    <option value="">Choose shift</option>
+                    <option value="">{t('Choose shift','Elegir turno')}</option>
                     {shifts.map((shift) => (
                       <option key={shift.id} value={shift.id}>
                         {new Date(shift.starts_at).toLocaleString()} · {employeeName(shift.employee_id)} · {roleName(shift.role_id)}
@@ -350,7 +353,7 @@ export default function ScheduleTemplatesPage() {
                   </select>
                 </label>
                 <label className={styles.field}>
-                  <span>Keep employee assignment</span>
+                  <span>{t('Keep employee assignment','Conservar asignación del empleado')}</span>
                   <input type="checkbox" checked={repeatAssignment} onChange={(event) => setRepeatAssignment(event.target.checked)} />
                 </label>
               </div>
@@ -369,27 +372,27 @@ export default function ScheduleTemplatesPage() {
                 </div>
               )}
               <div className={styles.actions}>
-                <button className={styles.button} disabled={busy || !repeatShift || !repeatDates.length || period?.status !== 'draft'} onClick={repeatSelected}>Repeat Shift</button>
+                <button className={styles.button} disabled={busy || !repeatShift || !repeatDates.length || period?.status !== 'draft'} onClick={repeatSelected}>{t('Repeat Shift','Repetir Turno')}</button>
               </div>
-              <p>The database rechecks overlap, availability, time off, qualification, skill level, rest, weekly hours and consecutive-day rules for every repeated assigned shift.</p>
+              <p>{t('The database rechecks overlap, availability, time off, qualification, skill level, rest, weekly hours and consecutive-day rules for every repeated assigned shift.','La base de datos vuelve a verificar cruces, disponibilidad, ausencias, calificación, nivel, descanso, horas semanales y días consecutivos para cada turno asignado repetido.')}</p>
             </div>
           </section>
 
           <section className={styles.section}>
-            <h2>Saved templates</h2>
+            <h2>{t('Saved templates','Plantillas guardadas')}</h2>
             <div className={styles.list}>
               {templates.map((item) => (
                 <div className={styles.entry} key={item.id}>
                   <div className={styles.entryHead}>
                     <div>
                       <h3>{item.name}</h3>
-                      <small>{item.description || 'No description'} · updated {new Date(item.updated_at).toLocaleString()}</small>
+                      <small>{item.description || t('No description','Sin descripción')} · {t('updated','actualizada')} {new Date(item.updated_at).toLocaleString()}</small>
                     </div>
-                    <span className={styles.pill}>active</span>
+                    <span className={styles.pill}>{t('active','activa')}</span>
                   </div>
                 </div>
               ))}
-              {!templates.length && <div className={styles.card}><b>No named templates yet.</b></div>}
+              {!templates.length && <div className={styles.card}><b>{t('No named templates yet.','Aún no hay plantillas guardadas.')}</b></div>}
             </div>
           </section>
         </>
