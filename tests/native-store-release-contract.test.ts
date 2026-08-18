@@ -75,3 +75,11 @@ test('native store release is manual, fail-closed, signed, and produces store ar
   assert.match(releaseWorkflow,/test "\$APS_ENV" = 'production'/);
   assert.match(releaseWorkflow,/actions\/upload-artifact@v4/);
 });
+
+test('signed iOS release fails closed when privacy manifests are absent or malformed',()=>{
+  assert.match(releaseWorkflow,/find "\$APP" -name PrivacyInfo\.xcprivacy -type f -print/);
+  assert.match(releaseWorkflow,/test -s "\$PRIVACY_MANIFESTS"/);
+  assert.match(releaseWorkflow,/Signed iOS app contains no PrivacyInfo\.xcprivacy manifest/);
+  assert.match(releaseWorkflow,/while IFS= read -r manifest/);
+  assert.match(releaseWorkflow,/plutil -lint "\$manifest"/);
+});
