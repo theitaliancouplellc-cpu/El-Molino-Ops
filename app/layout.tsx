@@ -12,6 +12,7 @@ import PilotUseRecorder from './pilot-use-recorder';
 import ProductionTelemetry from './production-telemetry';
 import SessionResilience from './session-resilience';
 import NativeRuntime from './native-runtime';
+import MfaGate from './mfa-gate';
 import {I18nProvider,LanguageToggle} from '@/lib/i18n';
 
 export const metadata: Metadata = {
@@ -41,15 +42,17 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <I18nProvider>
           <PWARegister />
           <ErrorSanitizer />
-          <EmployeeRootRedirect />
-          <PilotUseRecorder />
           <ProductionTelemetry />
-          <SessionResilience />
-          <NativeRuntime />
           <div className="global-language-control"><LanguageToggle compact/></div>
-          <GlobalActions />
-          <AskAgentBridge />
-          {children}
+          <MfaGate>
+            <EmployeeRootRedirect />
+            <PilotUseRecorder />
+            <SessionResilience />
+            <NativeRuntime />
+            <GlobalActions />
+            <AskAgentBridge />
+            {children}
+          </MfaGate>
         </I18nProvider>
       </body>
     </html>
