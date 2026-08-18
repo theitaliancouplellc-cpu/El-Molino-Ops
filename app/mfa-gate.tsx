@@ -1,6 +1,7 @@
 'use client';
 
 import {ReactNode,useCallback,useEffect,useState} from 'react';
+import {usePathname} from 'next/navigation';
 import {KeyRound,Loader2,LogOut,ShieldCheck} from 'lucide-react';
 import {supabase} from '@/lib/supabase';
 import {useI18n} from '@/lib/i18n';
@@ -9,7 +10,11 @@ type GateMode='checking'|'pass'|'enroll'|'challenge'|'approval'|'error';
 type Enrollment={factorId:string;qr:string;secret:string};
 type AccessStatus={aal2:boolean;factor_approved:boolean;bootstrap_eligible:boolean};
 
+const PUBLIC_STORE_PATHS=new Set(['/privacy','/support','/delete-account']);
+
 export default function MfaGate({children}:{children:ReactNode}){
+ const pathname=usePathname();
+ const publicStoreRoute=PUBLIC_STORE_PATHS.has(pathname);
  const {locale}=useI18n();
  const es=locale==='es';
  const [mode,setMode]=useState<GateMode>('checking');
@@ -56,10 +61,11 @@ export default function MfaGate({children}:{children:ReactNode}){
  },[es,verifyApprovedAccess]);
 
  useEffect(()=>{
+  if(publicStoreRoute)return;
   void evaluate();
   const {data}=supabase.auth.onAuthStateChange(()=>{queueMicrotask(()=>void evaluate())});
   return()=>data.subscription.unsubscribe();
- },[evaluate]);
+ },[evaluate,publicStoreRoute]);
 
  async function startEnrollment(){
   if(busy)return;setBusy(true);setMessage('');
@@ -94,6 +100,7 @@ export default function MfaGate({children}:{children:ReactNode}){
 
  async function signOut(){await supabase.auth.signOut();setMode('pass')}
 
+ if(publicStoreRoute)return <>{children}</>;
  if(mode==='pass')return <>{children}</>;
  if(mode==='checking')return <div className="full-loader"><Loader2 className="spin"/></div>;
 
