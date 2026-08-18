@@ -33,8 +33,47 @@ function gatewayError(body: any, fallback: string) {
   };
 }
 
+async function passwordSafetyError(password: unknown) {
+  if (typeof password !== 'string' || password.length < 1 || password.length > 256) return new Error('Password is invalid.');
+  const { data, error } = await rawSupabase.functions.invoke('password-risk-check', { body: { password } });
+  if (error || !data?.ok) return new Error('Password safety check is temporarily unavailable. Try again before using a password.');
+  if (data.compromised) return new Error('This password appears in known breach data and cannot be used. Choose a unique password or reset it.');
+  return null;
+}
+
+const secureAuth = new Proxy(rawSupabase.auth as any, {
+  get(target, prop) {
+    if (prop === 'signInWithPassword') {
+      return async (credentials: any) => {
+        const safetyError = await passwordSafetyError(credentials?.password);
+        if (safetyError) return { data: { user: null, session: null }, error: safetyError };
+        return target.signInWithPassword(credentials);
+      };
+    }
+    if (prop === 'signUp') {
+      return async (credentials: any) => {
+        const safetyError = await passwordSafetyError(credentials?.password);
+        if (safetyError) return { data: { user: null, session: null }, error: safetyError };
+        return target.signUp(credentials);
+      };
+    }
+    if (prop === 'updateUser') {
+      return async (attributes: any, options?: any) => {
+        if (typeof attributes?.password === 'string') {
+          const safetyError = await passwordSafetyError(attributes.password);
+          if (safetyError) return { data: { user: null }, error: safetyError };
+        }
+        return target.updateUser(attributes, options);
+      };
+    }
+    const value = Reflect.get(target, prop, target);
+    return typeof value === 'function' ? value.bind(target) : value;
+  },
+}) as typeof rawSupabase.auth;
+
 export const supabase = new Proxy(rawSupabase, {
   get(target, prop) {
+    if (prop === 'auth') return secureAuth;
     if (prop === 'rpc') {
       return async (fn: string, args: Record<string, unknown> = {}, options?: Record<string, unknown>) => {
         if (!PILOT_MUTATION_RPCS.has(fn)) return target.rpc(fn as never, args as never, options as never);
