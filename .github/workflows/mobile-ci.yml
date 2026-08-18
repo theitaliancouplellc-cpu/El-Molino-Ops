@@ -1,0 +1,82 @@
+name: El Molino Ops Mobile CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      EL_MOLINO_BUILD_NUMBER: ${{ github.run_number }}
+      EL_MOLINO_VERSION_NAME: 1.0.0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Verify web/native TypeScript contracts
+        run: npx tsc --noEmit --incremental false
+      - name: Synchronize Android project
+        run: npm run mobile:sync -- android
+      - name: Test, lint, and build unsigned release bundle
+        working-directory: android
+        run: ./gradlew test lint bundleRelease --stacktrace
+      - name: Preserve Android release bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-release-aab-unsigned
+          path: android/app/build/outputs/bundle/release/*.aab
+          if-no-files-found: error
+          retention-days: 14
+
+  ios:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Select supported Xcode
+        run: sudo xcode-select -s /Applications/Xcode_26.6.app
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Synchronize iOS project
+        run: npm run mobile:sync -- ios
+      - name: Resolve Swift packages
+        run: xcodebuild -resolvePackageDependencies -project ios/App/App.xcodeproj -scheme App
+      - name: Build unsigned iOS simulator application
+        env:
+          EL_MOLINO_BUILD_NUMBER: ${{ github.run_number }}
+        run: >-
+          xcodebuild
+          -project ios/App/App.xcodeproj
+          -scheme App
+          -configuration Release
+          -sdk iphonesimulator
+          -destination 'generic/platform=iOS Simulator'
+          CURRENT_PROJECT_VERSION=$EL_MOLINO_BUILD_NUMBER
+          MARKETING_VERSION=1.0.0
+          CODE_SIGNING_ALLOWED=NO
+          build

@@ -11,6 +11,7 @@ import EmployeeRootRedirect from './employee-root-redirect';
 import PilotUseRecorder from './pilot-use-recorder';
 import ProductionTelemetry from './production-telemetry';
 import SessionResilience from './session-resilience';
+import NativeRuntime from './native-runtime';
 import {I18nProvider,LanguageToggle} from '@/lib/i18n';
 
 export const metadata: Metadata = {
@@ -44,6 +45,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           <PilotUseRecorder />
           <ProductionTelemetry />
           <SessionResilience />
+          <NativeRuntime />
           <div className="global-language-control"><LanguageToggle compact/></div>
           <GlobalActions />
           <AskAgentBridge />
