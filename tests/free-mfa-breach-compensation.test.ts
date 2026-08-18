@@ -28,7 +28,7 @@ test('authenticated application runtime is gated by free TOTP MFA',()=>{
 
 test('server-side Data API, Realtime-table and Storage access require aal2',()=>{
   assert.match(migration,/pgrst\.db_pre_request = 'public\.enforce_el_molino_aal2_request'/);
-  assert.match(migration,/claims->>'role'.*= 'authenticated'/s);
+  assert.match(migration,/claims->>'role'[\s\S]*= 'authenticated'/);
   assert.match(migration,/claims->>'aal','aal1'\) <> 'aal2'/);
   assert.match(migration,/as restrictive for all to authenticated/);
   assert.match(migration,/storage\.objects/);
