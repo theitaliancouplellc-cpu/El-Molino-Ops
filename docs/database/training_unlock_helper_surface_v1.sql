@@ -1,13 +1,16 @@
--- El Molino Ops: training unlock arithmetic is an internal primitive.
+-- El Molino Ops: keep low-level SECURITY DEFINER primitives internal.
 --
--- The public employee-facing training RPCs already authenticate the caller,
--- scope the assignment to the current location/employee (or management), and then
--- invoke this helper under SECURITY DEFINER. The low-level helper itself accepts
--- arbitrary assignment/course-lesson UUIDs and does not enforce caller ownership,
--- so it must not be directly exposed as a PostgREST RPC to signed-in clients.
+-- Employee-facing training/time-clock RPCs authenticate and scope callers before
+-- invoking these helpers. The helpers themselves deliberately accept primitive
+-- identifiers and do not perform the full API authorization contract, so exposing
+-- them directly through PostgREST creates unnecessary enumeration surfaces.
 --
--- Keep service-role access and postgres-owned SECURITY DEFINER callers working,
--- while removing the direct public/anonymous/authenticated execution surface.
+-- All database callers of both helpers are postgres-owned SECURITY DEFINER
+-- functions. Keep service-role/internal execution while removing direct
+-- public/anonymous/authenticated RPC access.
 
 revoke all on function public.training_lesson_is_unlocked(uuid,uuid) from public, anon, authenticated;
 grant execute on function public.training_lesson_is_unlocked(uuid,uuid) to service_role;
+
+revoke all on function public.time_clock_employee_id_for_user(uuid) from public, anon, authenticated;
+grant execute on function public.time_clock_employee_id_for_user(uuid) to service_role;
