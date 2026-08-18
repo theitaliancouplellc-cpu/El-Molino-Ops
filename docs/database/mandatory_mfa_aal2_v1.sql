@@ -1,19 +1,12 @@
 -- Free server-side compensating control for the hosted leaked-password feature.
--- Apply only after the MFA gate is live in production.
 --
--- Threat model:
---   1. HIBP blocks breached passwords in supported El Molino password flows.
---   2. A caller can still talk to Supabase Auth directly with the public project key.
---   3. Therefore restaurant data requires a verified TOTP factor (aal2) AND an
---      approved factor. A newly-created attacker session cannot self-approve a
---      factor even if it bypasses the client and enrolls TOTP directly.
---
--- Bootstrap:
---   The only current account is the pre-release admin. Only that user's single
---   most recently active session at migration time is placed in a short bootstrap
---   window. Once that same session ID is upgraded to aal2,
---   finalize_my_mfa_bootstrap() approves the factor. A new leaked-password session
---   gets a different session ID and cannot approve its own factor.
+-- This migration is bootstrap-safe: it can be activated before the MFA UI has
+-- propagated. Every NEW authenticated session is blocked from restaurant data
+-- unless it has an approved TOTP factor. Only the single most-recent admin
+-- session that already existed at migration time receives a temporary bootstrap
+-- exception. A stolen password creates a different session_id and cannot use it.
+-- Once that trusted session approves TOTP, the bootstrap exception is consumed
+-- and normal access requires the approved factor.
 
 create table if not exists private.mfa_approved_factors (
   factor_id uuid primary key references auth.mfa_factors(id) on delete cascade,
@@ -37,11 +30,12 @@ create table if not exists private.mfa_bootstrap_sessions (
 revoke all on table private.mfa_approved_factors from public, anon, authenticated;
 revoke all on table private.mfa_bootstrap_sessions from public, anon, authenticated;
 
--- Trust only the single most recently active session that already existed for
--- each pre-release admin. This bootstrap expires quickly and cannot be recreated
--- through a public RPC.
+-- Select only the single most-recent pre-existing session for each pre-release
+-- admin. The exception is deliberately session-bound, not password-bound. It is
+-- long enough to survive deployment/device timing but cannot be recreated by a
+-- public Auth call after this migration runs.
 insert into private.mfa_bootstrap_sessions(session_id,user_id,expires_at)
-select ranked.id,ranked.user_id,now()+interval '24 hours'
+select ranked.id,ranked.user_id,now()+interval '14 days'
 from (
   select s.id,s.user_id,
          row_number() over(partition by s.user_id order by s.updated_at desc,s.created_at desc) as rn
@@ -53,9 +47,8 @@ from (
 where ranked.rn=1
 on conflict(session_id) do nothing;
 
--- If the admin completes TOTP enrollment after the UI deployment but before this
--- migration is activated, trust that factor only when it belongs to the same
--- pre-existing bootstrap session selected above.
+-- If the trusted session already completed TOTP before migration activation,
+-- approve that factor immediately.
 insert into private.mfa_approved_factors(factor_id,user_id,approved_by,approval_source)
 select distinct s.factor_id,s.user_id,s.user_id,'bootstrap'
 from auth.sessions s
@@ -84,6 +77,44 @@ $$;
 revoke all on function public.current_mfa_factor_approved() from public;
 grant execute on function public.current_mfa_factor_approved() to authenticated, service_role;
 
+create or replace function public.current_mfa_bootstrap_allowed()
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select auth.uid() is not null
+    and exists(
+      select 1
+      from private.mfa_bootstrap_sessions b
+      join auth.sessions s on s.id=b.session_id and s.user_id=b.user_id
+      where b.session_id=nullif(auth.jwt()->>'session_id','')::uuid
+        and b.user_id=auth.uid()
+        and b.consumed_at is null
+        and b.expires_at>now()
+    )
+    and not exists(
+      select 1 from private.mfa_approved_factors a where a.user_id=auth.uid()
+    )
+$$;
+
+revoke all on function public.current_mfa_bootstrap_allowed() from public;
+grant execute on function public.current_mfa_bootstrap_allowed() to authenticated, service_role;
+
+create or replace function public.current_mfa_access_allowed()
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select public.current_mfa_factor_approved() or public.current_mfa_bootstrap_allowed()
+$$;
+
+revoke all on function public.current_mfa_access_allowed() from public;
+grant execute on function public.current_mfa_access_allowed() to authenticated, service_role;
+
 create or replace function public.my_mfa_access_status()
 returns jsonb
 language plpgsql
@@ -100,11 +131,7 @@ begin
   if auth.uid() is null then raise exception 'authentication required'; end if;
   select s.factor_id into factor from auth.sessions s where s.id=sid and s.user_id=auth.uid();
   approved := factor is not null and public.current_mfa_factor_approved();
-  bootstrap := factor is not null and exists(
-    select 1 from private.mfa_bootstrap_sessions b
-    where b.session_id=sid and b.user_id=auth.uid()
-      and b.consumed_at is null and b.expires_at>now()
-  );
+  bootstrap := public.current_mfa_bootstrap_allowed();
   return jsonb_build_object(
     'aal2',coalesce(auth.jwt()->>'aal','aal1')='aal2',
     'factor_approved',approved,
@@ -135,11 +162,7 @@ begin
   where s.id=sid and s.user_id=auth.uid() and s.aal::text='aal2';
   if factor is null then raise exception 'verified factor required'; end if;
 
-  if not exists(
-    select 1 from private.mfa_bootstrap_sessions b
-    where b.session_id=sid and b.user_id=auth.uid()
-      and b.consumed_at is null and b.expires_at>now()
-  ) then
+  if not public.current_mfa_bootstrap_allowed() then
     raise exception 'trusted bootstrap session required';
   end if;
 
@@ -169,35 +192,26 @@ set search_path = ''
 as $$
 declare
   claims jsonb := coalesce(auth.jwt(), '{}'::jsonb);
-  sid uuid;
   path text := coalesce(current_setting('request.path',true),'');
-  bootstrap_ok boolean := false;
 begin
   if coalesce(claims->>'role','') <> 'authenticated' then return; end if;
 
+  -- Existing trusted bootstrap session remains usable while the MFA UI rolls
+  -- out; approved aal2 sessions are also allowed. This check is session-bound.
+  if public.current_mfa_access_allowed() then return; end if;
+
+  -- Any NEW password-only session is stopped here, including callers bypassing
+  -- the El Molino client and talking directly to Supabase Auth/Data API.
   if coalesce(claims->>'aal','aal1') <> 'aal2' then
     raise sqlstate 'PGRST' using
       message = json_build_object('code','MFA_REQUIRED','message','Two-step authentication is required for El Molino Ops.')::text,
       detail = json_build_object('status',403)::text;
   end if;
 
-  if public.current_mfa_factor_approved() then return; end if;
-
-  sid := nullif(claims->>'session_id','')::uuid;
-  bootstrap_ok := exists(
-    select 1
-    from private.mfa_bootstrap_sessions b
-    join auth.sessions s on s.id=b.session_id and s.user_id=b.user_id
-    where b.session_id=sid and b.user_id=auth.uid()
-      and b.consumed_at is null and b.expires_at>now()
-      and s.factor_id is not null and s.aal::text='aal2'
-  );
-
-  -- An unapproved factor may only inspect its security status. A trusted
-  -- pre-existing bootstrap session may additionally finalize its own factor.
-  -- Match by suffix as request.path representation may include a leading slash.
+  -- A newly-enrolled but unapproved aal2 factor can inspect status so the app can
+  -- explain why access is blocked. It cannot finalize unless it is the trusted
+  -- bootstrap session (which would already have passed current_mfa_access_allowed).
   if right(path,length('rpc/my_mfa_access_status'))='rpc/my_mfa_access_status' then return; end if;
-  if bootstrap_ok and right(path,length('rpc/finalize_my_mfa_bootstrap'))='rpc/finalize_my_mfa_bootstrap' then return; end if;
 
   raise sqlstate 'PGRST' using
     message = json_build_object('code','MFA_FACTOR_NOT_APPROVED','message','This authenticator factor is not approved for El Molino Ops.')::text,
@@ -214,8 +228,9 @@ alter role authenticator set pgrst.db_pre_request = 'public.enforce_el_molino_aa
 notify pgrst, 'reload config';
 
 -- PostgREST pre-request hooks do not cover Realtime. Add a restrictive policy to
--- every existing RLS-protected public table. Restrictive policies never grant
--- access; they only narrow whatever access existing policies already grant.
+-- every existing RLS-protected public table. The trusted bootstrap session is
+-- temporarily permitted; every new password session is denied. Once a factor is
+-- approved the bootstrap condition automatically becomes false.
 do $$
 declare r record;
 begin
@@ -229,23 +244,23 @@ begin
   loop
     execute format('drop policy if exists %I on public.%I','mfa_approved_factor_gate',r.relname);
     execute format(
-      'create policy %I on public.%I as restrictive for all to authenticated using ((select public.current_mfa_factor_approved())) with check ((select public.current_mfa_factor_approved()))',
+      'create policy %I on public.%I as restrictive for all to authenticated using ((select public.current_mfa_access_allowed())) with check ((select public.current_mfa_access_allowed()))',
       'mfa_approved_factor_gate',r.relname
     );
   end loop;
 end $$;
 
 -- Storage has its own API and does not execute the PostgREST pre-request hook.
--- Its existing object policies remain authoritative; this adds approved MFA as
--- an additional required condition for authenticated users.
+-- Existing object policies remain authoritative; this adds the same approved-
+-- factor-or-trusted-bootstrap condition as an additional requirement.
 drop policy if exists mfa_approved_factor_gate on storage.objects;
 create policy mfa_approved_factor_gate
   on storage.objects
   as restrictive
   for all
   to authenticated
-  using ((select public.current_mfa_factor_approved()))
-  with check ((select public.current_mfa_factor_approved()));
+  using ((select public.current_mfa_access_allowed()))
+  with check ((select public.current_mfa_access_allowed()));
 
 comment on function public.enforce_el_molino_aal2_request() is
-'El Molino Ops free password-takeover compensating control: Data API requires aal2 plus an approved TOTP factor.';
+'El Molino Ops free password-takeover control: new sessions require an approved aal2 factor; one pre-existing trusted admin session may bootstrap.';
