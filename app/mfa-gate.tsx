@@ -5,9 +5,9 @@ import {KeyRound,Loader2,LogOut,ShieldCheck} from 'lucide-react';
 import {supabase} from '@/lib/supabase';
 import {useI18n} from '@/lib/i18n';
 
-type GateMode='checking'|'pass'|'enroll'|'challenge'|'error';
-
+type GateMode='checking'|'pass'|'enroll'|'challenge'|'approval'|'error';
 type Enrollment={factorId:string;qr:string;secret:string};
+type AccessStatus={aal2:boolean;factor_approved:boolean;bootstrap_eligible:boolean};
 
 export default function MfaGate({children}:{children:ReactNode}){
  const {locale}=useI18n();
@@ -19,19 +19,41 @@ export default function MfaGate({children}:{children:ReactNode}){
  const [busy,setBusy]=useState(false);
  const [message,setMessage]=useState('');
 
+ const verifyApprovedAccess=useCallback(async()=>{
+  const status=await supabase.rpc('my_mfa_access_status',{});
+  if(status.error||!status.data){
+   setMessage(es?'La protección del servidor todavía se está activando. Intenta de nuevo en un momento.':'Server-side account protection is still activating. Try again in a moment.');
+   setMode('error');return false;
+  }
+  const value=status.data as AccessStatus;
+  if(value.factor_approved){setMode('pass');setFactorId('');setEnrollment(null);setCode('');return true}
+  if(value.bootstrap_eligible){
+   const finalized=await supabase.rpc('finalize_my_mfa_bootstrap',{});
+   if(!finalized.error&&finalized.data===true){
+    const recheck=await supabase.rpc('my_mfa_access_status',{});
+    const after=recheck.data as AccessStatus|null;
+    if(!recheck.error&&after?.factor_approved){setMode('pass');setFactorId('');setEnrollment(null);setCode('');return true}
+   }
+   setMessage(es?'No se pudo aprobar este autenticador desde la sesión de confianza. Intenta de nuevo.':'Could not approve this authenticator from the trusted session. Try again.');
+   setMode('error');return false;
+  }
+  setMessage(es?'Este autenticador está verificado, pero no está aprobado para acceder a los datos del restaurante. Usa un dispositivo de confianza existente o pide aprobación a gerencia.':'This authenticator is verified but is not approved for restaurant-data access. Use an existing trusted device or request manager approval.');
+  setMode('approval');return false;
+ },[es]);
+
  const evaluate=useCallback(async()=>{
   setMessage('');
   const {data:{session}}=await supabase.auth.getSession();
   if(!session){setMode('pass');setFactorId('');setEnrollment(null);return}
   const aal=await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
   if(aal.error){setMessage(es?'No se pudo verificar la seguridad de la sesión.':'Could not verify session security.');setMode('error');return}
-  if(aal.data.currentLevel==='aal2'){setMode('pass');setFactorId('');setEnrollment(null);setCode('');return}
+  if(aal.data.currentLevel==='aal2'){await verifyApprovedAccess();return}
   const factors=await supabase.auth.mfa.listFactors();
   if(factors.error){setMessage(es?'No se pudieron cargar los factores de seguridad.':'Could not load security factors.');setMode('error');return}
   const verified=factors.data.totp.find(f=>f.status==='verified');
   if(verified){setFactorId(verified.id);setMode('challenge');return}
   setMode('enroll');
- },[es]);
+ },[es,verifyApprovedAccess]);
 
  useEffect(()=>{
   void evaluate();
@@ -63,7 +85,8 @@ export default function MfaGate({children}:{children:ReactNode}){
    if(challenge.error)throw challenge.error;
    const verified=await supabase.auth.mfa.verify({factorId:factor,challengeId:challenge.data.id,code:code.trim()});
    if(verified.error)throw verified.error;
-   await supabase.auth.refreshSession();
+   const refreshed=await supabase.auth.refreshSession();
+   if(refreshed.error)throw refreshed.error;
    await evaluate();
   }catch(err){setMessage(err instanceof Error?err.message:(es?'No se pudo verificar el código.':'Could not verify the code.'))}
   finally{setBusy(false)}
@@ -87,7 +110,7 @@ export default function MfaGate({children}:{children:ReactNode}){
     </>}
    </div>}
    {mode==='challenge'&&<div className="form" style={{marginTop:18}}><p>{es?'Ingresa el código actual de tu aplicación de autenticación.':'Enter the current code from your authenticator app.'}</p><input className="input" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={e=>setCode(e.target.value.replace(/\D/g,'').slice(0,6))} aria-label={es?'Código de autenticación':'Authentication code'}/><button className="btn" disabled={busy||code.length!==6} onClick={()=>void verify(factorId)}>{busy?<Loader2 className="spin"/>:<ShieldCheck/>} {es?'Verificar':'Verify'}</button></div>}
-   {mode==='error'&&<button className="btn" style={{marginTop:18}} onClick={()=>void evaluate()}>{es?'Intentar de nuevo':'Try again'}</button>}
+   {(mode==='error'||mode==='approval')&&<button className="btn" style={{marginTop:18}} onClick={()=>void evaluate()}>{es?'Intentar de nuevo':'Try again'}</button>}
    <button className="btn ghost" style={{marginTop:12}} onClick={()=>void signOut()}><LogOut/> {es?'Cerrar sesión':'Sign out'}</button>
   </section>
  </main>;
