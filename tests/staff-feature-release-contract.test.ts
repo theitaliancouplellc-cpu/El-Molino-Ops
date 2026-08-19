@@ -9,6 +9,8 @@ const rootLayout=readFileSync('app/layout.tsx','utf8');
 const layout=readFileSync('app/employee/layout.tsx','utf8');
 const staffNav=readFileSync('app/employee/staff-bottom-nav.tsx','utf8');
 const mobilePolish=readFileSync('app/employee/mobile-polish.css','utf8');
+const setup=readFileSync('app/employee/setup/page.tsx','utf8');
+const access=readFileSync('app/employee/access/page.tsx','utf8');
 const more=readFileSync('app/employee/more/page.tsx','utf8');
 const notificationCenter=readFileSync('app/employee/notifications/page.tsx','utf8');
 const notificationPreferences=readFileSync('app/employee/notifications/preferences/page.tsx','utf8');
@@ -69,6 +71,14 @@ test('staff primary navigation is centralized and legacy per-page copies are sup
   assert.doesNotMatch(staffNav,/employee\/training|employee\/time-clock|employee\/tips/);
   assert.match(mobilePolish,/\.employee-shell main>nav\{display:none!important\}/);
   assert.match(mobilePolish,/\.employee-shell>nav\{display:grid\}/);
+});
+
+test('setup and access-state copy mention only released Staff capabilities',()=>{
+  for(const source of [setup,access]){
+    assert.doesNotMatch(source,/\btraining\b|\btime-clock\b|\btip tools\b|\bcapacitación\b|\breloj\b|\bpropinas\b/i);
+  }
+  assert.match(setup,/published schedules, shift trades, open shifts, availability, time off, messages and staff notifications/);
+  assert.match(access,/schedule, requests, Shift Pool and team communications/);
 });
 
 test('hidden-domain notifications do not leak through Staff Home notification surfaces',()=>{
