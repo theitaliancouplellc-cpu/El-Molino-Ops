@@ -6,9 +6,9 @@ import {supabase} from '@/lib/supabase';
 import {isStaffProductPathAllowed} from '@/lib/staff-features';
 import {useI18n} from '@/lib/i18n';
 
-const PUBLIC_INFORMATION_PATHS=['/privacy','/support','/delete-account'] as const;
-const publicInformationPath=(pathname:string)=>PUBLIC_INFORMATION_PATHS.some(prefix=>pathname===prefix||pathname.startsWith(`${prefix}/`));
-const setupException=(pathname:string)=>pathname==='/account'||pathname.startsWith('/delete-account');
+const PUBLIC_INFORMATION_PATHS=new Set<string>(['/privacy','/support','/delete-account']);
+const publicInformationPath=(pathname:string)=>PUBLIC_INFORMATION_PATHS.has(pathname);
+const setupException=(pathname:string)=>pathname==='/account'||pathname==='/delete-account';
 const lifecycleException=(pathname:string)=>pathname==='/employee/access'||setupException(pathname);
 
 type SetupState={status:string;employment_status?:'active'|'suspended'|'inactive'|null;access_allowed?:boolean};
