@@ -6,7 +6,9 @@ Cloudflare Workers is the canonical web runtime for El Molino Ops. The repositor
 
 Production Worker: `el-molino-ops`
 
-Certification Worker: `el-molino-ops-certification`
+Pull-request certification Worker: `el-molino-ops-certification`
+
+Production release-gate Worker: `el-molino-ops-release-gate`
 
 Repository: `theitaliancouplellc-cpu/El-Molino-Ops`
 
@@ -38,14 +40,14 @@ A production release is permitted only from `main`. For the exact `github.sha` i
 
 1. checks out the immutable main SHA;
 2. installs locked dependencies, type-checks, runs the regression suite, and builds OpenNext with the release SHA baked into the artifact;
-3. validates package limits;
-4. deploys that exact already-built artifact to `el-molino-ops-certification` first;
-5. requires exact-main staging health, release identity, root runtime, and Cloudflare runtime-tail evidence;
-6. only after the staging gate passes, deploys the same built SHA to `el-molino-ops`;
+3. validates package limits using the dedicated `release_gate` Wrangler environment;
+4. deploys that exact already-built artifact to `el-molino-ops-release-gate`;
+5. requires exact-main release-gate health, release identity, root runtime, and Cloudflare runtime-tail evidence;
+6. only after the release gate passes, deploys the same built SHA to `el-molino-ops`;
 7. requires production `/api/health` HTTP 200, exact body/header release identity, all required health checks green, and the production root smoke test;
-8. records the final Cloudflare staging and production deployment identities.
+8. records the final release-gate and production deployment identities.
 
-A successful build without an authenticated publish is not a successful release. A successful staging deploy does not permit production if any exact-SHA or runtime gate fails.
+The release-gate Worker has its own `WORKER_SELF_REFERENCE` binding and is not the pull-request certification Worker. A successful build without an authenticated publish is not a successful release. A successful release-gate deploy does not permit production if any exact-SHA or runtime gate fails.
 
 ## Durable production evidence
 
@@ -76,9 +78,13 @@ Required GitHub Actions repository secrets:
 
 The API token must be scoped to the Cloudflare account with only the permissions required to deploy and inspect/tail these Workers. Credentials must never be committed to the repository.
 
-## Serialization
+## Serialization and queue isolation
 
-Pull-request certification and production release share the `cloudflare-release-control-plane` concurrency group with `cancel-in-progress: false`. This prevents two workflows from racing the shared certification Worker or a production release.
+Pull-request certification and production publication intentionally do **not** share one GitHub Actions concurrency group.
+
+PR certification retains its certification lane and writes only to `el-molino-ops-certification`. The canonical production publisher uses `cloudflare-production-release` and writes its pre-production proof only to `el-molino-ops-release-gate` before publishing `el-molino-ops`. The two non-production Workers have distinct self-reference bindings.
+
+This separation is required because GitHub concurrency permits at most one running and one pending member per group; a newer queued run can replace an older pending run even when `cancel-in-progress: false`. A shared PR/production queue therefore allowed a pull-request certification run to displace a pending main release before any production job started. Dedicated Workers and queue lanes remove both the pending-run cancellation failure mode and the shared-Worker race.
 
 The downstream production-evidence verifier has a separate per-SHA concurrency key because it never publishes a Worker. It may observe the finished canonical release, but it cannot race the publisher as a second writer.
 
@@ -86,7 +92,7 @@ The downstream production-evidence verifier has a separate per-SHA concurrency k
 
 Rollback is an explicit operational action, not an automatic response to an ambiguous deployment result. The repository rollback runbook remains authoritative for production incidents.
 
-The replacement audit on 2026-08-19 proved the Cloudflare control plane can build, deploy, identify, tail, roll back, and restore an exact release SHA on an isolated Worker. That audit was intentionally separate from product work. The permanent workflows keep the ordinary PR and release path smaller: every release proves exact-SHA staging and production identity; rollback drills remain deliberate exercises rather than destructive actions on every change.
+The replacement audit on 2026-08-19 proved the Cloudflare control plane can build, deploy, identify, tail, roll back, and restore an exact release SHA on an isolated Worker. That audit was intentionally separate from product work. The permanent workflows keep the ordinary PR and release path smaller: every release proves exact-SHA release-gate and production identity; rollback drills remain deliberate exercises rather than destructive actions on every change.
 
 ## Duplicate publisher rule
 
@@ -96,6 +102,6 @@ This repository cannot prove a Cloudflare dashboard setting by source code alone
 
 ## Data safety of certification probes
 
-The certification Worker currently uses the production Supabase public configuration because that is the runtime configuration already proven by the application. Automated Cloudflare certification probes are intentionally GET-only and non-mutating. They do not perform authenticated staff actions, payroll/financial mutations, scheduling changes, or database migrations.
+The certification and release-gate Workers currently use the production Supabase public configuration because that is the runtime configuration already proven by the application. Automated Cloudflare certification probes are intentionally GET-only and non-mutating. They do not perform authenticated staff actions, payroll/financial mutations, scheduling changes, or database migrations.
 
 Authenticated product behavior remains covered by the application's CI/browser/database security gates until a fully isolated staging data environment is deliberately provisioned.
