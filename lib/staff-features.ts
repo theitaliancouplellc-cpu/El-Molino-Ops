@@ -34,8 +34,8 @@ export function staffFeatureEnabled(feature: StaffFeature): boolean {
 
 type RouteReleaseRule = {prefix: string; feature: StaffFeature};
 
-// Most-specific employee routes first. Unknown /employee routes fail closed so a
-// future module cannot become Staff-visible merely because a route was added.
+// Most-specific employee routes first. Released feature families may own nested
+// routes, but lifecycle/shared exceptions are exact so unknown future routes fail closed.
 const STAFF_ROUTE_RELEASE_RULES: readonly RouteReleaseRule[] = [
   {prefix: '/employee/notifications/preferences', feature: 'notificationPreferences'},
   {prefix: '/employee/notifications', feature: 'notifications'},
@@ -49,7 +49,7 @@ const STAFF_ROUTE_RELEASE_RULES: readonly RouteReleaseRule[] = [
   {prefix: '/employee/tips', feature: 'tips'},
 ];
 
-const STAFF_LIFECYCLE_PREFIXES = ['/employee/setup', '/employee/access'] as const;
+const STAFF_LIFECYCLE_PATHS = new Set<string>(['/employee/setup', '/employee/access']);
 const STAFF_SHARED_ALLOWED_PATHS = new Set<string>(['/account', '/delete-account', '/privacy', '/support']);
 
 function normalizedPath(pathname: string): string {
@@ -60,10 +60,6 @@ function routeMatches(pathname: string, prefix: string): boolean {
   return pathname === prefix || pathname.startsWith(`${prefix}/`);
 }
 
-function matchesAny(pathname: string, prefixes: readonly string[]): boolean {
-  return prefixes.some((prefix) => routeMatches(pathname, prefix));
-}
-
 export function staffRouteFeature(pathname: string): StaffFeature | null {
   const normalized = normalizedPath(pathname);
   if (normalized === '/employee') return 'home';
@@ -72,7 +68,7 @@ export function staffRouteFeature(pathname: string): StaffFeature | null {
 
 export function isStaffRouteReleased(pathname: string): boolean {
   const normalized = normalizedPath(pathname);
-  if (matchesAny(normalized, STAFF_LIFECYCLE_PREFIXES)) return true;
+  if (STAFF_LIFECYCLE_PATHS.has(normalized)) return true;
   const feature = staffRouteFeature(normalized);
   if (feature) return staffFeatureEnabled(feature);
   return !routeMatches(normalized, '/employee');
