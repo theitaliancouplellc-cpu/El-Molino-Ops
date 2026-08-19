@@ -15,7 +15,8 @@ const backup=readFileSync('lib/backup-manifest.ts','utf8');
 
 test('employee accounts enter a dedicated deny-by-default released staff app',()=>{
   assert.match(routeGuard,/app_role.*employee/);
-  assert.match(routeGuard,/location\.replace\('\/employee'\)/);
+  assert.match(routeGuard,/target='\/employee'/);
+  assert.match(routeGuard,/window\.location\.replace\(target\)/);
   assert.match(routeGuard,/isStaffProductPathAllowed/);
   assert.doesNotMatch(routeGuard,/STAFF_BLOCKED_PREFIXES|STAFF_BLOCKED_EXACT/);
   for(const href of ['/employee/notifications','/employee/schedule','/employee/shift-pool','/employee/requests','/employee/team','/employee/more','/account'])assert.match(home,new RegExp(href.replaceAll('/','\\/')));
