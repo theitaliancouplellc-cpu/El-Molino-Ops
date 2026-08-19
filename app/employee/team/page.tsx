@@ -49,16 +49,21 @@ export default function EmployeeTeam(){
  useEffect(()=>{
   if(!ready||!selectedChannel)return;
   let mounted=true;
+  let realtime:ReturnType<typeof supabase.channel>|null=null;
   const refresh=()=>{if(!mounted)return;if(document.visibilityState==='visible')void loadMessages(selectedChannel);else void refreshChannels()};
-  void supabase.realtime.setAuth();
-  const realtime=supabase.channel(`team:${selectedChannel}`,{config:{private:true}})
-   .on('broadcast',{event:'INSERT'},refresh)
-   .on('broadcast',{event:'UPDATE'},refresh)
-   .on('broadcast',{event:'DELETE'},refresh)
-   .subscribe((status)=>{if(mounted&&(status==='CHANNEL_ERROR'||status==='TIMED_OUT'))setNotice(c.realtimeError)});
+  const connect=async()=>{
+   await supabase.realtime.setAuth();
+   if(!mounted)return;
+   realtime=supabase.channel(`team:${selectedChannel}`,{config:{private:true}})
+    .on('broadcast',{event:'INSERT'},refresh)
+    .on('broadcast',{event:'UPDATE'},refresh)
+    .on('broadcast',{event:'DELETE'},refresh)
+    .subscribe((status)=>{if(mounted&&(status==='CHANNEL_ERROR'||status==='TIMED_OUT'))setNotice(c.realtimeError)});
+  };
+  void connect().catch(()=>{if(mounted)setNotice(c.realtimeError)});
   const visible=()=>{if(document.visibilityState==='visible')void loadMessages(selectedChannel)};
   document.addEventListener('visibilitychange',visible);
-  return()=>{mounted=false;document.removeEventListener('visibilitychange',visible);void supabase.removeChannel(realtime)};
+  return()=>{mounted=false;document.removeEventListener('visibilitychange',visible);if(realtime)void supabase.removeChannel(realtime)};
  },[ready,selectedChannel]);
 
  async function refreshChannels(){const ch=await supabase.rpc('my_team_channels',{});if(!ch.error)setChannels((Array.isArray(ch.data)?ch.data:[]) as Channel[])}
