@@ -50,7 +50,7 @@ const STAFF_ROUTE_RELEASE_RULES: readonly RouteReleaseRule[] = [
 ];
 
 const STAFF_LIFECYCLE_PREFIXES = ['/employee/setup', '/employee/access'] as const;
-const STAFF_SHARED_ALLOWED_PREFIXES = ['/account', '/delete-account'] as const;
+const STAFF_SHARED_ALLOWED_PREFIXES = ['/account', '/delete-account', '/privacy', '/support'] as const;
 
 function normalizedPath(pathname: string): string {
   return (pathname || '/').split(/[?#]/, 1)[0] || '/';
