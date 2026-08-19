@@ -5,6 +5,7 @@ import {readFileSync} from 'node:fs';
 const migration=readFileSync('docs/database/employee_identity_lifecycle_v2.sql','utf8');
 const grants=readFileSync('docs/database/employee_identity_table_grants_hardening_v2.sql','utf8');
 const guard=readFileSync('app/employee-root-redirect.tsx','utf8');
+const rootLayout=readFileSync('app/layout.tsx','utf8');
 const access=readFileSync('app/employee/access/page.tsx','utf8');
 const account=readFileSync('app/account/page.tsx','utf8');
 const manager=readFileSync('app/manager/team-setup/page.tsx','utf8');
@@ -21,13 +22,26 @@ test('employment lifecycle is a constrained authoritative state machine',()=>{
   assert.match(migration,/override_used/);
 });
 
-test('employee lifecycle guard blocks unapproved suspended and inactive operational access',()=>{
+test('employee lifecycle gate is fail-closed before restricted content can render',()=>{
+  assert.match(rootLayout,/<EmployeeRootRedirect>[\s\S]*\{children\}[\s\S]*<\/EmployeeRootRedirect>/);
+  assert.match(guard,/type GateMode='checking'\|'pass'\|'redirecting'\|'error'/);
+  assert.match(guard,/const \[mode,setMode\]=useState<GateMode>\(publicInformationPath\(pathname\)\?'pass':'checking'\)/);
+  assert.match(guard,/if\(mode==='pass'\)return <>\{children\}<\/>/);
+  assert.match(guard,/if\(mode==='error'\)return/);
+  assert.match(guard,/No restricted screen was opened/);
+  assert.match(guard,/return <div className="full-loader" aria-live="polite">/);
+});
+
+test('employee lifecycle gate routes unapproved suspended and inactive staff without weakening approved active access',()=>{
   assert.match(guard,/employee_self_setup_status/);
   assert.match(guard,/setup\.status!==['"]approved['"]/);
-  assert.match(guard,/window\.location\.replace\('\/employee\/setup'\)/);
+  assert.match(guard,/target=['"]\/employee\/setup['"]/);
   assert.match(guard,/setup\.employment_status!==['"]active['"]/);
-  assert.match(guard,/window\.location\.replace\('\/employee\/access'\)/);
+  assert.match(guard,/setup\.access_allowed===false/);
+  assert.match(guard,/target=['"]\/employee\/access['"]/);
   assert.match(guard,/lifecycleException/);
+  assert.match(guard,/if\(target&&target!==pathname\)\{setMode\('redirecting'\);window\.location\.replace\(target\);return\}/);
+  assert.match(guard,/setMode\('pass'\);/);
   assert.match(access,/Access suspended/);
   assert.match(access,/Account inactive/);
   assert.match(access,/Check access again/);
