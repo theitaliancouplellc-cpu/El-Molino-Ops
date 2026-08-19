@@ -21,6 +21,15 @@ test('Phase 2 releases private group chat without releasing future system channe
   assert.match(releaseBoundary,/c\.channel_kind<>'system'/);
 });
 
+test('group creation retries reuse a client request id until the request changes',()=>{
+  assert.match(page,/pendingGroupKey/);
+  assert.match(page,/const key=pendingGroupKey\.current\|\|crypto\.randomUUID\(\)/);
+  assert.match(page,/pendingGroupKey\.current=key/);
+  assert.match(page,/p_client_request_id:key/);
+  assert.match(page,/pendingGroupKey\.current=null;setGroupTitle/);
+  assert.match(page,/pendingGroupKey\.current=null;setGroupMembers/);
+});
+
 test('roster chat is system-maintained from active same-location employees and prunes inactive membership',()=>{
   assert.match(releaseBoundary,/ensure_staff_roster_channel/);
   assert.match(releaseBoundary,/values\(loc,'roster','All Staff','staff-roster'/);
