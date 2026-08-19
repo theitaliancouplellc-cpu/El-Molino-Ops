@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {isStaffProductPathAllowed,isStaffRouteReleased} from '../lib/staff-features';
 
+// Phase 1 intentionally certifies the centralized Staff allowlist rather than the retired route blocklist.
 const privacy=readFileSync('docs/database/employee_privacy_minimization_v1.sql','utf8');
 const schedule=readFileSync('app/employee/schedule/page.tsx','utf8');
 const pool=readFileSync('app/schedule/pool/page.tsx','utf8');
