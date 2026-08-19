@@ -15,7 +15,7 @@ jobs:
   staging-proof:
     if: github.event.pull_request.head.ref == 'infra/cloudflare-runtime-audit'
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 45
     env:
       TARGET_SHA: e03ed65b5af4174c8430df9c9e761c21d9bac705
       STAGING_WORKER: el-molino-ops-phase1-staging
@@ -33,20 +33,24 @@ jobs:
           test -n "${CLOUDFLARE_ACCOUNT_ID:-}" || { echo '::error::CLOUDFLARE_ACCOUNT_ID unavailable'; exit 1; }
           curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" > /tmp/cf-subdomain.json
           node -e "const x=require('/tmp/cf-subdomain.json'); if(!x.success||!x.result?.subdomain) process.exit(1); require('fs').writeFileSync('/tmp/cf-subdomain',x.result.subdomain)"
+
       - uses: actions/checkout@v4
         with:
           ref: ${{ env.TARGET_SHA }}
           fetch-depth: 1
+
       - name: Prove immutable PR source
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$TARGET_SHA"
           test -z "$(git status --porcelain)"
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: package-lock.json
+
       - name: Build exact SHA and measure Worker
         shell: bash
         run: |
@@ -69,12 +73,14 @@ jobs:
           print('compressed_worker_bytes='+str(b))
           if b>10*1024*1024: raise SystemExit('Worker exceeds Workers Paid 10 MiB limit')
           PY
+
       - name: Record pre-audit staging deployment state
         shell: bash
         run: |
           set -euo pipefail
           npx wrangler deployments status --name "$STAGING_WORKER" --json > /tmp/cf-status-before.json || true
           cat /tmp/cf-status-before.json || true
+
       - name: Deploy exact SHA to disposable Cloudflare staging Worker
         shell: bash
         run: |
@@ -84,6 +90,7 @@ jobs:
           URL="https://${STAGING_WORKER}.${SUBDOMAIN}.workers.dev"
           echo "$URL" > /tmp/cf-staging-url
           printf 'staging_url=%s\n' "$URL" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Verify deployed health and exact release identity with one GET
         shell: bash
         run: |
@@ -105,45 +112,107 @@ jobs:
           NODE
           test "$HEADER_SHA" = "$TARGET_SHA"
           printf 'health_get_status=%s\nhealth_body_sha=%s\nhealth_header_sha=%s\n' "$CODE" "$TARGET_SHA" "$HEADER_SHA" >> "$GITHUB_STEP_SUMMARY"
-      - name: Capture runtime invocation/error evidence
-        shell: bash
-        run: |
-          set -euo pipefail
-          URL="$(cat /tmp/cf-staging-url)"
-          timeout 18s npx wrangler tail "$STAGING_WORKER" --format json > /tmp/cf-tail.jsonl 2>/tmp/cf-tail.err &
-          TAIL_PID=$!
-          sleep 4
-          curl -fsS "$URL/api/health?audit=1" >/dev/null
-          curl -fsS "$URL/" >/dev/null
-          sleep 5
-          wait "$TAIL_PID" || true
-          cat /tmp/cf-tail.err || true
-          python3 - <<'PY'
-          import json
-          bad=[]; seen=0
-          for line in open('/tmp/cf-tail.jsonl',errors='ignore'):
-            try: x=json.loads(line); seen+=1
-            except: continue
-            outcome=str(x.get('outcome','')).lower()
-            exc=x.get('exceptions') or []
-            if outcome and outcome not in ('ok','unknown'): bad.append(('outcome',outcome))
-            if exc: bad.append(('exceptions',exc))
-          print('tail_events='+str(seen))
-          print('runtime_failures='+str(len(bad)))
-          if seen < 1: raise SystemExit('no runtime tail events captured')
-          if bad: print(bad[:10]); raise SystemExit(1)
-          PY
-      - name: Record deployed version identity
+
+      - name: Record deployed version identity before runtime proof
         shell: bash
         run: |
           set -euo pipefail
           npx wrangler deployments status --name "$STAGING_WORKER" --json > /tmp/cf-status-deployed.json
           cat /tmp/cf-status-deployed.json
-      - name: Exercise staging rollback and restore exact SHA
+
+      - name: Capture runtime invocation/error evidence
+        id: runtime_tail
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
           URL="$(cat /tmp/cf-staging-url)"
+          : > /tmp/cf-tail.jsonl
+          : > /tmp/cf-tail.err
+
+          # Cloudflare documents wrangler tail as the CLI for real-time Worker invocation,
+          # console, error and exception logs. Explicit 100% sampling and GET filtering make
+          # this certification probe deterministic while keeping traffic narrow.
+          npx wrangler tail "$STAGING_WORKER" --format json --sampling-rate 1 --method GET > /tmp/cf-tail.jsonl 2>/tmp/cf-tail.err &
+          TAIL_PID=$!
+
+          cleanup_tail() {
+            kill -INT "$TAIL_PID" 2>/dev/null || true
+            for i in {1..10}; do
+              kill -0 "$TAIL_PID" 2>/dev/null || break
+              sleep 1
+            done
+            kill -TERM "$TAIL_PID" 2>/dev/null || true
+            wait "$TAIL_PID" 2>/dev/null || true
+          }
+          trap cleanup_tail EXIT
+
+          # Give Wrangler enough time to create and connect the tail session, then generate
+          # multiple uniquely tagged invocations instead of racing a single request.
+          sleep 10
+          for i in {1..12}; do
+            curl -fsS "$URL/api/health?audit=tail-$i-$GITHUB_RUN_ID" >/dev/null
+            sleep 1
+          done
+          curl -fsS "$URL/" >/dev/null
+          sleep 12
+
+          cleanup_tail
+          trap - EXIT
+
+          echo '--- wrangler tail stderr ---'
+          cat /tmp/cf-tail.err || true
+          echo '--- wrangler tail stdout (first 80 lines) ---'
+          sed -n '1,80p' /tmp/cf-tail.jsonl || true
+
+          python3 - <<'PY'
+          import json
+          bad=[]; seen=0; health_seen=0
+          for line in open('/tmp/cf-tail.jsonl',errors='ignore'):
+            line=line.strip()
+            if not line.startswith('{'): continue
+            try: x=json.loads(line)
+            except: continue
+            seen+=1
+            outcome=str(x.get('outcome','')).lower()
+            exc=x.get('exceptions') or []
+            event=x.get('event') or {}
+            request=event.get('request') or {}
+            url=str(request.get('url',''))
+            if '/api/health?audit=tail-' in url: health_seen+=1
+            if outcome and outcome not in ('ok','unknown'): bad.append(('outcome',outcome,url))
+            if exc: bad.append(('exceptions',exc,url))
+          print('tail_events='+str(seen))
+          print('tagged_health_events='+str(health_seen))
+          print('runtime_failures='+str(len(bad)))
+          if seen < 1: raise SystemExit('no runtime tail events captured')
+          if health_seen < 1: raise SystemExit('tail connected but no tagged health invocation was captured')
+          if bad: print(bad[:10]); raise SystemExit(1)
+          PY
+          touch /tmp/cf-tail-pass
+
+      - name: Exercise staging rollback and restore exact SHA
+        id: rollback_drill
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="$(cat /tmp/cf-staging-url)"
+          RESTORED=0
+
+          restore_exact() {
+            echo 'Restoring exact target SHA to staging Worker...'
+            EL_MOLINO_RELEASE_SHA="$TARGET_SHA" RELEASE_SHA="$TARGET_SHA" npx wrangler deploy --name "$STAGING_WORKER" --keep-vars 2>&1 | tee /tmp/cf-restore.log
+            RESTORED=1
+          }
+
+          emergency_restore() {
+            if [ "$RESTORED" != 1 ]; then
+              echo 'Rollback drill exited before normal restore; performing emergency exact-SHA restore.' >&2
+              restore_exact || true
+            fi
+          }
+          trap emergency_restore EXIT
 
           npx wrangler rollback --name "$STAGING_WORKER" --message "El Molino Cloudflare audit rollback exercise" 2>&1 | tee /tmp/cf-rollback.log
 
@@ -157,7 +226,8 @@ jobs:
           ROLLBACK_HEADER_SHA="$(awk -F': ' 'tolower($1)=="x-el-molino-release" {gsub("\r",""); print $2}' /tmp/rollback-health.headers | tail -1)"
           printf 'rollback_http_status=%s\nrollback_release_header=%s\n' "$ROLLBACK_CODE" "$ROLLBACK_HEADER_SHA" >> "$GITHUB_STEP_SUMMARY"
 
-          EL_MOLINO_RELEASE_SHA="$TARGET_SHA" RELEASE_SHA="$TARGET_SHA" npx wrangler deploy --name "$STAGING_WORKER" --keep-vars 2>&1 | tee /tmp/cf-restore.log
+          restore_exact
+          trap - EXIT
 
           RESTORE_CODE=""
           for i in {1..60}; do
@@ -175,16 +245,30 @@ jobs:
           NODE
           test "$RESTORE_HEADER_SHA" = "$TARGET_SHA"
           printf 'restore_http_status=%s\nrestore_header_sha=%s\n' "$RESTORE_CODE" "$RESTORE_HEADER_SHA" >> "$GITHUB_STEP_SUMMARY"
+          touch /tmp/cf-rollback-pass
+
       - name: Record final deployment/version identity
+        if: always()
         shell: bash
         run: |
-          set -euo pipefail
-          npx wrangler deployments status --name "$STAGING_WORKER" --json 2>&1 | tee /tmp/cf-status-final.json
+          set -u
+          npx wrangler deployments status --name "$STAGING_WORKER" --json 2>&1 | tee /tmp/cf-status-final.json || true
           {
             echo "target_sha=$TARGET_SHA"
             echo "staging_worker=$STAGING_WORKER"
-            echo "staging_url=$(cat /tmp/cf-staging-url)"
-            echo "compressed_worker_bytes=$(cat /tmp/cf-compressed-bytes)"
+            test -f /tmp/cf-staging-url && echo "staging_url=$(cat /tmp/cf-staging-url)"
+            test -f /tmp/cf-compressed-bytes && echo "compressed_worker_bytes=$(cat /tmp/cf-compressed-bytes)"
+            echo "runtime_tail_step=${{ steps.runtime_tail.outcome }}"
+            echo "rollback_drill_step=${{ steps.rollback_drill.outcome }}"
             echo 'data_scope=production Supabase public configuration; only non-mutating health/root probes executed'
-            echo 'rollback_scope=disposable staging Worker only; exact target SHA redeployed and reverified afterward'
+            echo 'rollback_scope=disposable staging Worker only; exact target SHA is restored after the rollback attempt'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce Cloudflare staging certification gates
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f /tmp/cf-tail-pass || { echo '::error::Runtime tail evidence gate did not pass'; exit 1; }
+          test -f /tmp/cf-rollback-pass || { echo '::error::Rollback-and-restore evidence gate did not pass'; exit 1; }
+          echo 'Cloudflare staging runtime-tail and rollback/restore gates passed.'
