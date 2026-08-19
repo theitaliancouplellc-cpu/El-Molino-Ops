@@ -5,6 +5,8 @@ import {STAFF_FEATURES,isStaffNotificationReleased,isStaffRouteReleased,staffRou
 
 const boundary=readFileSync('app/employee/staff-release-boundary.tsx','utf8');
 const layout=readFileSync('app/employee/layout.tsx','utf8');
+const staffNav=readFileSync('app/employee/staff-bottom-nav.tsx','utf8');
+const mobilePolish=readFileSync('app/employee/mobile-polish.css','utf8');
 const more=readFileSync('app/employee/more/page.tsx','utf8');
 const notificationCenter=readFileSync('app/employee/notifications/page.tsx','utf8');
 const notificationPreferences=readFileSync('app/employee/notifications/preferences/page.tsx','utf8');
@@ -41,6 +43,17 @@ test('employee layout fails closed visually before an unreleased route can rende
   assert.match(boundary,/location\.replace\('\/employee'\)/);
 });
 
+test('staff primary navigation is centralized and legacy per-page copies are suppressed',()=>{
+  assert.match(layout,/StaffBottomNav/);
+  assert.match(staffNav,/data-staff-primary-nav/);
+  assert.match(staffNav,/aria-current/);
+  for(const href of ['/employee','/employee/schedule','/employee/requests','/employee/team','/employee/more'])assert.match(staffNav,new RegExp(`['"]${href.replaceAll('/','\\/')}['"]`));
+  assert.match(staffNav,/nav\.messages/);
+  assert.doesNotMatch(staffNav,/employee\/training|employee\/time-clock|employee\/tips/);
+  assert.match(mobilePolish,/\.employee-shell main>nav\{display:none!important\}/);
+  assert.match(mobilePolish,/\.employee-shell>nav\{display:grid\}/);
+});
+
 test('hidden-domain notifications do not leak through Staff Home notification surfaces',()=>{
   assert.equal(isStaffNotificationReleased({href:'/employee/training',category:'training'}),false);
   assert.equal(isStaffNotificationReleased({href:null,event_key:'time_clock.punch_recorded'}),false);
@@ -49,6 +62,7 @@ test('hidden-domain notifications do not leak through Staff Home notification su
   assert.equal(isStaffNotificationReleased({href:'/employee/schedule',category:'schedule'}),true);
   assert.equal(isStaffNotificationReleased({href:'/employee/team',event_key:'announcement.created'}),true);
   assert.match(notificationCenter,/filter\(isStaffNotificationReleased\)/);
+  assert.match(notificationCenter,/p_category:category/);
   assert.match(notificationPreferences,/isStaffNotificationReleased\(\{category:p\.category\}\)/);
 });
 
