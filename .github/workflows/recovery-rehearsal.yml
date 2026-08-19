@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  statuses: write
 
 concurrency:
   group: disaster-recovery-rehearsal-${{ github.sha }}
@@ -21,6 +22,28 @@ jobs:
     timeout-minutes: 10
 
     steps:
+      - name: Mark recovery rehearsal pending
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          node - <<'NODE' > /tmp/recovery-status-pending.json
+          const runUrl=`${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+          process.stdout.write(JSON.stringify({
+            state:'pending',
+            context:'Disaster Recovery Rehearsal',
+            description:'Validating portable recovery contract for exact SHA',
+            target_url:runUrl,
+          }));
+          NODE
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            --data-binary @/tmp/recovery-status-pending.json >/dev/null
+
       - name: Checkout exact repository SHA
         uses: actions/checkout@v4
         with:
@@ -37,14 +60,17 @@ jobs:
         run: npm ci
 
       - name: Run backup and restore regression contracts
+        id: regression
         run: npx tsx --test tests/backup-manifest-contract.test.ts tests/backup-integrity.test.ts tests/disaster-recovery-contract.test.ts
 
       - name: Run non-destructive synthetic recovery rehearsal
+        id: rehearsal
         env:
           RECOVERY_EVIDENCE_PATH: artifacts/recovery-rehearsal.json
         run: npx tsx scripts/recovery-rehearsal.ts
 
       - name: Upload sanitized recovery evidence
+        id: evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -72,3 +98,36 @@ jobs:
               echo '```'
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish stable recovery rehearsal commit status
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REGRESSION_OUTCOME: ${{ steps.regression.outcome }}
+          REHEARSAL_OUTCOME: ${{ steps.rehearsal.outcome }}
+          EVIDENCE_OUTCOME: ${{ steps.evidence.outcome }}
+        run: |
+          set -euo pipefail
+          state='failure'
+          description='Portable disaster recovery rehearsal failed'
+          if [ "$REGRESSION_OUTCOME" = 'success' ] && [ "$REHEARSAL_OUTCOME" = 'success' ] && [ "$EVIDENCE_OUTCOME" = 'success' ]; then
+            state='success'
+            description='Portable disaster recovery rehearsal passed'
+          fi
+          export STATUS_STATE="$state" STATUS_DESCRIPTION="$description"
+          node - <<'NODE' > /tmp/recovery-status-final.json
+          const runUrl=`${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+          process.stdout.write(JSON.stringify({
+            state:process.env.STATUS_STATE,
+            context:'Disaster Recovery Rehearsal',
+            description:process.env.STATUS_DESCRIPTION,
+            target_url:runUrl,
+          }));
+          NODE
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            --data-binary @/tmp/recovery-status-final.json >/dev/null
