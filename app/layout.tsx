@@ -45,13 +45,14 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           <ProductionTelemetry />
           <div className="global-language-control"><LanguageToggle compact/></div>
           <MfaGate>
-            <EmployeeRootRedirect />
-            <PilotUseRecorder />
-            <SessionResilience />
-            <NativeRuntime />
-            <GlobalActions />
-            <AskAgentBridge />
-            {children}
+            <EmployeeRootRedirect>
+              <PilotUseRecorder />
+              <SessionResilience />
+              <NativeRuntime />
+              <GlobalActions />
+              <AskAgentBridge />
+              {children}
+            </EmployeeRootRedirect>
           </MfaGate>
         </I18nProvider>
       </body>
