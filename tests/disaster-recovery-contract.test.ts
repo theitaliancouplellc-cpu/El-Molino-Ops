@@ -6,10 +6,12 @@ const workflow=fs.readFileSync('.github/workflows/recovery-rehearsal.yml','utf8'
 const rehearsal=fs.readFileSync('scripts/recovery-rehearsal.ts','utf8');
 const restorePage=fs.readFileSync('app/admin/restore/page.tsx','utf8');
 
-test('recovery rehearsal is scheduled, manually runnable, exact-SHA bound, and credential-free',()=>{
+test('recovery rehearsal runs on main releases, weekly, and manually with exact-SHA read-only execution',()=>{
+  assert.match(workflow,/push:\s*\n\s*branches: \[main\]/);
   assert.match(workflow,/schedule:/);
   assert.match(workflow,/workflow_dispatch:/);
   assert.match(workflow,/cron: '17 8 \* \* 1'/);
+  assert.match(workflow,/group: disaster-recovery-rehearsal-\$\{\{ github\.sha \}\}/);
   assert.match(workflow,/ref: \$\{\{ github\.sha \}\}/);
   assert.match(workflow,/persist-credentials: false/);
   assert.match(workflow,/permissions:\s*\n\s*contents: read/);
