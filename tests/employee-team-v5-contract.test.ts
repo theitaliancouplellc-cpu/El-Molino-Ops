@@ -5,6 +5,7 @@ import {readFileSync} from 'node:fs';
 const page=readFileSync('app/employee/team/page.tsx','utf8');
 const schema=readFileSync('docs/database/employee_team_communications_v5.sql','utf8');
 const readWatermark=readFileSync('docs/database/employee_team_communications_v5_1.sql','utf8');
+const releaseBoundary=readFileSync('docs/database/employee_team_communications_v5_2.sql','utf8');
 const recovery=readFileSync('docs/database/backup_recovery_employee_team_v5.sql','utf8');
 const backup=readFileSync('lib/backup-manifest.ts','utf8');
 const features=readFileSync('lib/staff-features.ts','utf8');
@@ -17,12 +18,15 @@ test('Phase 2 releases private group chat without releasing future system channe
   assert.match(schema,/group requires 1-49 other active teammates/);
   assert.match(schema,/all group members must be active teammates at this location/);
   assert.match(schema,/client_request_id/);
+  assert.match(releaseBoundary,/c\.channel_kind<>'system'/);
 });
 
-test('roster chat is system-maintained from active same-location employees',()=>{
-  assert.match(schema,/ensure_staff_roster_channel/);
-  assert.match(schema,/values\(loc,'roster','All Staff','staff-roster'/);
-  assert.match(schema,/e\.location_id=loc and e\.active and e\.deleted_at is null/);
+test('roster chat is system-maintained from active same-location employees and prunes inactive membership',()=>{
+  assert.match(releaseBoundary,/ensure_staff_roster_channel/);
+  assert.match(releaseBoundary,/values\(loc,'roster','All Staff','staff-roster'/);
+  assert.match(releaseBoundary,/delete from public\.team_channel_members/);
+  assert.match(releaseBoundary,/not exists\([\s\S]*coalesce\(e\.employment_status,'active'\)='active'/);
+  assert.match(releaseBoundary,/e\.location_id=loc and e\.active and e\.deleted_at is null/);
   assert.match(page,/ensure_staff_roster_channel/);
   assert.match(page,/channel_kind==='roster'/);
 });
