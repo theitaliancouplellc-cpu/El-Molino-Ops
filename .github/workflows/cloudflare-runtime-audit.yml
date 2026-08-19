@@ -1,0 +1,135 @@
+name: Cloudflare Runtime Replacement Audit
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-runtime-audit
+  cancel-in-progress: false
+
+jobs:
+  staging-proof:
+    if: github.event.pull_request.head.ref == 'infra/cloudflare-runtime-audit'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      TARGET_SHA: e03ed65b5af4174c8430df9c9e761c21d9bac705
+      STAGING_WORKER: el-molino-ops-phase1-staging
+      NEXT_PUBLIC_SUPABASE_URL: https://asuvgjxdmxizbnjrccsz.supabase.co
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_gtR8VfsQ5n-FPPbypnYKTw_f2k3Xyrk
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Validate isolated target and Cloudflare credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$STAGING_WORKER" != 'el-molino-ops'
+          test -n "${CLOUDFLARE_API_TOKEN:-}" || { echo '::error::CLOUDFLARE_API_TOKEN unavailable'; exit 1; }
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}" || { echo '::error::CLOUDFLARE_ACCOUNT_ID unavailable'; exit 1; }
+          curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" > /tmp/cf-subdomain.json
+          node -e "const x=require('/tmp/cf-subdomain.json'); if(!x.success||!x.result?.subdomain) process.exit(1); require('fs').writeFileSync('/tmp/cf-subdomain',x.result.subdomain)"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_SHA }}
+          fetch-depth: 1
+      - name: Prove immutable PR source
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+          test -z "$(git status --porcelain)"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Build exact SHA and measure Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --no-audit --no-fund
+          npx tsc --noEmit
+          EL_MOLINO_RELEASE_SHA="$TARGET_SHA" RELEASE_SHA="$TARGET_SHA" npm run cf:build
+          grep -R -F -q "$TARGET_SHA" .open-next/worker.js
+          npx wrangler deploy --name "$STAGING_WORKER" --dry-run --outdir /tmp/cf-audit-bundle 2>&1 | tee /tmp/cf-dry-run.log
+          python3 - <<'PY'
+          import re
+          s=open('/tmp/cf-dry-run.log').read()
+          m=re.search(r'Total Upload:\s*[^/]+/\s*(?:gzip:\s*)?([0-9.]+)\s*(KiB|MiB)',s,re.I)
+          if not m: raise SystemExit('compressed Worker size not found')
+          n=float(m.group(1)); unit=m.group(2).lower(); b=int(n*(1024 if unit=='kib' else 1024*1024))
+          open('/tmp/cf-compressed-bytes','w').write(str(b))
+          print('compressed_worker_bytes='+str(b))
+          if b>10*1024*1024: raise SystemExit('Worker exceeds Workers Paid 10 MiB limit')
+          PY
+      - name: Deploy exact SHA to disposable Cloudflare staging Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          EL_MOLINO_RELEASE_SHA="$TARGET_SHA" RELEASE_SHA="$TARGET_SHA" npx wrangler deploy --name "$STAGING_WORKER" --keep-vars 2>&1 | tee /tmp/cf-deploy.log
+          SUBDOMAIN="$(cat /tmp/cf-subdomain)"
+          URL="https://${STAGING_WORKER}.${SUBDOMAIN}.workers.dev"
+          echo "$URL" > /tmp/cf-staging-url
+          printf 'staging_url=%s\n' "$URL" >> "$GITHUB_STEP_SUMMARY"
+      - name: Verify deployed health and exact release identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="$(cat /tmp/cf-staging-url)"
+          for i in {1..60}; do
+            CODE="$(curl -sS -o /tmp/health.json -w '%{http_code}' "$URL/api/health?release=$TARGET_SHA" || true)"
+            if [ "$CODE" = 200 ]; then break; fi
+            sleep 2
+          done
+          test "$CODE" = 200 || { cat /tmp/health.json || true; exit 1; }
+          HEADER_SHA="$(curl -sSI "$URL/api/health?release=$TARGET_SHA" | awk -F': ' 'tolower($1)=="x-el-molino-release" {gsub("\r",""); print $2}' | tail -1)"
+          node - <<'NODE'
+          const fs=require('fs'); const h=JSON.parse(fs.readFileSync('/tmp/health.json','utf8')); const expected=process.env.TARGET_SHA;
+          if(!h.ok) throw new Error('health not ok');
+          if(h.release?.sha!==expected) throw new Error(`release SHA mismatch ${h.release?.sha}`);
+          if(!h.checks?.filter(c=>c.required).every(c=>c.ok)) throw new Error('required health check failed');
+          NODE
+          test "$HEADER_SHA" = "$TARGET_SHA"
+      - name: Capture runtime invocation/error evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="$(cat /tmp/cf-staging-url)"
+          timeout 18s npx wrangler tail "$STAGING_WORKER" --format json > /tmp/cf-tail.jsonl 2>/tmp/cf-tail.err &
+          TAIL_PID=$!
+          sleep 4
+          curl -fsS "$URL/api/health?audit=1" >/dev/null
+          curl -fsS "$URL/" >/dev/null
+          sleep 5
+          wait "$TAIL_PID" || true
+          cat /tmp/cf-tail.err || true
+          python3 - <<'PY'
+          import json
+          bad=[]; seen=0
+          for line in open('/tmp/cf-tail.jsonl',errors='ignore'):
+            try: x=json.loads(line); seen+=1
+            except: continue
+            outcome=str(x.get('outcome','')).lower()
+            exc=x.get('exceptions') or []
+            if outcome and outcome not in ('ok','unknown'): bad.append(('outcome',outcome))
+            if exc: bad.append(('exceptions',exc))
+          print('tail_events='+str(seen))
+          print('runtime_failures='+str(len(bad)))
+          if bad: print(bad[:10]); raise SystemExit(1)
+          PY
+      - name: Record deployment/version identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deployments status --name "$STAGING_WORKER" 2>&1 | tee /tmp/cf-status.log
+          {
+            echo "target_sha=$TARGET_SHA"
+            echo "staging_worker=$STAGING_WORKER"
+            echo "staging_url=$(cat /tmp/cf-staging-url)"
+            echo "compressed_worker_bytes=$(cat /tmp/cf-compressed-bytes)"
+            echo 'data_scope=production Supabase public configuration; only non-mutating health/root probes executed'
+          } >> "$GITHUB_STEP_SUMMARY"
