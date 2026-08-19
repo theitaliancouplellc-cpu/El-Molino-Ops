@@ -68,7 +68,7 @@ create or replace function private.broadcast_team_channel_change()
 returns trigger language plpgsql security definer set search_path='pg_catalog','public','realtime' as $$
 declare cid uuid;
 begin
-  cid:=coalesce(new.channel_id,old.channel_id);
+  cid:=case when tg_op='DELETE' then old.channel_id else new.channel_id end;
   if cid is not null then
     perform realtime.broadcast_changes(
       'team:'||cid::text,
@@ -81,7 +81,8 @@ begin
       'record'
     );
   end if;
-  return coalesce(new,old);
+  if tg_op='DELETE' then return old; end if;
+  return new;
 end$$;
 revoke all on function private.broadcast_team_channel_change() from public,anon,authenticated;
 
@@ -130,11 +131,13 @@ begin
   limit 1;
   if cid is not null then return cid; end if;
 
-  select count(distinct x)::int into requested_members from unnest(coalesce(p_member_employee_ids,'{}'::uuid[])) x where x<>me;
+  select count(distinct u.employee_id)::int into requested_members
+  from unnest(coalesce(p_member_employee_ids,'{}'::uuid[])) as u(employee_id)
+  where u.employee_id<>me;
   if requested_members<1 or requested_members>49 then raise exception 'group requires 1-49 other active teammates'; end if;
   select count(distinct e.id)::int into valid_members
-  from unnest(coalesce(p_member_employee_ids,'{}'::uuid[])) x
-  join public.employees e on e.id=x
+  from unnest(coalesce(p_member_employee_ids,'{}'::uuid[])) as u(employee_id)
+  join public.employees e on e.id=u.employee_id
   where e.id<>me and e.location_id=loc and e.active and e.deleted_at is null and coalesce(e.employment_status,'active')='active';
   if valid_members<>requested_members then raise exception 'all group members must be active teammates at this location'; end if;
 
@@ -151,8 +154,8 @@ begin
   values(cid,loc,me,now()) on conflict(channel_id,employee_id) do nothing;
   insert into public.team_channel_members(channel_id,location_id,employee_id)
   select cid,loc,e.id
-  from unnest(p_member_employee_ids) x
-  join public.employees e on e.id=x
+  from unnest(p_member_employee_ids) as u(employee_id)
+  join public.employees e on e.id=u.employee_id
   where e.id<>me and e.location_id=loc and e.active and e.deleted_at is null and coalesce(e.employment_status,'active')='active'
   on conflict(channel_id,employee_id) do nothing;
   return cid;
@@ -235,8 +238,13 @@ begin
  select x.id into mid from public.team_channel_messages x where x.channel_id=p_channel_id and x.author_employee_id=me and x.client_message_id=p_client_message_id limit 1;
  if mid is not null then return jsonb_build_object('message_id',mid,'deduplicated',true);end if;
 
- select count(distinct x)::int into mention_requested from unnest(coalesce(p_mentioned_employee_ids,'{}'::uuid[])) x where x<>me;
- select count(distinct m.employee_id)::int into mention_valid from unnest(coalesce(p_mentioned_employee_ids,'{}'::uuid[])) x join public.team_channel_members m on m.employee_id=x and m.channel_id=p_channel_id and m.location_id=loc where x<>me;
+ select count(distinct u.employee_id)::int into mention_requested
+ from unnest(coalesce(p_mentioned_employee_ids,'{}'::uuid[])) as u(employee_id)
+ where u.employee_id<>me;
+ select count(distinct m.employee_id)::int into mention_valid
+ from unnest(coalesce(p_mentioned_employee_ids,'{}'::uuid[])) as u(employee_id)
+ join public.team_channel_members m on m.employee_id=u.employee_id and m.channel_id=p_channel_id and m.location_id=loc
+ where u.employee_id<>me;
  if mention_requested<>mention_valid then raise exception 'mentions must be members of this conversation';end if;
 
  insert into public.team_channel_messages(channel_id,location_id,author_employee_id,body,client_message_id,reply_to_message_id)
@@ -245,7 +253,8 @@ begin
  update public.team_channel_members set last_read_at=now() where channel_id=p_channel_id and employee_id=me and location_id=loc;
  insert into public.team_message_mentions(message_id,channel_id,location_id,employee_id)
  select mid,p_channel_id,loc,m.employee_id
- from unnest(coalesce(p_mentioned_employee_ids,'{}'::uuid[])) x join public.team_channel_members m on m.employee_id=x and m.channel_id=p_channel_id and m.location_id=loc
+ from unnest(coalesce(p_mentioned_employee_ids,'{}'::uuid[])) as u(employee_id)
+ join public.team_channel_members m on m.employee_id=u.employee_id and m.channel_id=p_channel_id and m.location_id=loc
  where m.employee_id<>me on conflict do nothing;
 
  insert into public.notifications(location_id,user_id,type,title,body,href,data,category,event_key,dedupe_key,priority)
