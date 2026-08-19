@@ -16,7 +16,7 @@ const tradeSnapshot=readFileSync('docs/database/employee_shift_pool_trade_snapsh
 const tradeEligibility=readFileSync('docs/database/employee_trade_eligibility_v5_3.sql','utf8');
 const tradeReview=readFileSync('docs/database/employee_trade_review_revalidation_v5_3_1.sql','utf8');
 
-test('employee Home uses authoritative priority and Shift Pool snapshots',()=>{
+test('employee Home uses authoritative priority and Shift Pool snapshots without exposing unreleased modules',()=>{
  assert.match(home,/employee_home_priority_snapshot/);
  assert.match(home,/employee_shift_pool_snapshot/);
  assert.match(home,/required_acknowledgments/);
@@ -24,7 +24,8 @@ test('employee Home uses authoritative priority and Shift Pool snapshots',()=>{
  assert.match(home,/unread_messages/);
  assert.match(home,/notes/);
  assert.match(home,/break_minutes/);
- for(const href of ['/employee/requests','/employee/shift-pool','/employee/team','/employee/training'])assert.match(home,new RegExp(href.replaceAll('/','\\/')));
+ for(const href of ['/employee/requests','/employee/shift-pool','/employee/team'])assert.match(home,new RegExp(href.replaceAll('/','\\/')));
+ for(const hidden of ['/employee/training','/employee/time-clock','/employee/tips'])assert.doesNotMatch(home,new RegExp(`href=["']${hidden.replaceAll('/','\\/')}["']`));
  assert.doesNotMatch(home,/from\('time_off_requests'\)/);
  assert.doesNotMatch(home,/from\('availability_change_requests'\)/);
  assert.doesNotMatch(home,/from\('shift_pool_offers'\)/);
