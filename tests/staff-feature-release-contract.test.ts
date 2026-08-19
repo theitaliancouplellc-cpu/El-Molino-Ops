@@ -43,7 +43,15 @@ test('staff route release gate fails closed for hidden and unknown employee rout
 
 test('staff global product path allowlist rejects every legacy or management surface by default',()=>{
   for(const route of ['/employee','/employee/schedule','/employee/requests','/employee/team','/employee/notifications','/employee/more','/account','/delete-account','/privacy','/support'])assert.equal(isStaffProductPathAllowed(route),true,route);
-  for(const route of ['/team','/discussions','/training','/time-clock','/tips','/schedule','/schedule/pool','/admin','/manager','/tools','/ops','/inventory','/calendar','/tasks','/shift','/saved','/ai-runtime-test','/employee/training','/employee/future-module'])assert.equal(isStaffProductPathAllowed(route),false,route);
+  for(const route of ['/team','/discussions','/training','/time-clock','/tips','/schedule','/schedule/pool','/admin','/manager','/tools','/ops','/inventory','/calendar','/tasks','/shift','/saved','/ai-runtime-test','/employee/training','/employee/future-module','/support/admin','/privacy/internal','/account/admin','/delete-account/admin'])assert.equal(isStaffProductPathAllowed(route),false,route);
+});
+
+test('root employee gate uses exact public and lifecycle exceptions so future nested routes fail closed',()=>{
+  assert.match(employeeRootGate,/const PUBLIC_INFORMATION_PATHS=new Set<string>\(\['\/privacy','\/support','\/delete-account'\]\)/);
+  assert.match(employeeRootGate,/PUBLIC_INFORMATION_PATHS\.has\(pathname\)/);
+  assert.match(employeeRootGate,/const setupException=\(pathname:string\)=>pathname==='\/account'\|\|pathname==='\/delete-account'/);
+  assert.doesNotMatch(employeeRootGate,/PUBLIC_INFORMATION_PATHS[^\n]*startsWith/);
+  assert.doesNotMatch(employeeRootGate,/setupException[^\n]*startsWith/);
 });
 
 test('root employee gate blocks page rendering until role, lifecycle and release access resolve',()=>{
