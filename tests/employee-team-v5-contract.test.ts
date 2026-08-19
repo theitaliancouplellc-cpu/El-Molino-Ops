@@ -84,6 +84,11 @@ test('message read evidence counts current active recipients only',()=>{
   assert.doesNotMatch(archivedHardening,/count\(\*\)::int-1/);
 });
 
+test('Phase 2 foreign keys have covering indexes',()=>{
+  assert.match(archivedHardening,/create index if not exists team_channels_created_by_employee_idx[\s\S]*on public\.team_channels\(created_by_employee_id\)/);
+  assert.match(archivedHardening,/create index if not exists team_message_mentions_channel_idx[\s\S]*on public\.team_message_mentions\(channel_id,created_at desc\)/);
+});
+
 test('private realtime broadcast is authorized by conversation membership and cleaned up client-side',()=>{
   assert.match(schema,/can_receive_team_channel_topic/);
   assert.match(schema,/p_topic='team:'\|\|c\.id::text/);
