@@ -57,12 +57,22 @@ test('root employee gate uses exact public and lifecycle exceptions so future ne
   assert.doesNotMatch(employeeRootGate,/setupException[^\n]*startsWith/);
 });
 
+test('root employee gate binds pass decisions to the pathname and cancels stale async checks',()=>{
+  assert.match(employeeRootGate,/type GateDecision=\{path:string;mode:GateMode\}/);
+  assert.match(employeeRootGate,/setDecision\(\{path:pathname,mode\}\)/);
+  assert.match(employeeRootGate,/return\(\)=>\{cancelled=true\}/);
+  assert.match(employeeRootGate,/if\(cancelled\)return/);
+  assert.match(employeeRootGate,/const currentMode=decision\.path===pathname\?decision\.mode:'checking'/);
+  assert.match(employeeRootGate,/if\(currentMode==='pass'\)return <>\{children\}<\/>/);
+  assert.doesNotMatch(employeeRootGate,/if\(mode==='pass'\)return/);
+});
+
 test('root employee gate blocks page rendering until role, lifecycle and release access resolve',()=>{
   assert.match(rootLayout,/<EmployeeRootRedirect>[\s\S]*\{children\}[\s\S]*<\/EmployeeRootRedirect>/);
   assert.match(employeeRootGate,/type GateMode='checking'\|'pass'\|'redirecting'\|'error'/);
   assert.match(employeeRootGate,/isStaffProductPathAllowed/);
-  assert.match(employeeRootGate,/if\(mode==='pass'\)return <>\{children\}<\/>/);
-  assert.match(employeeRootGate,/setMode\('redirecting'\);window\.location\.replace\(target\)/);
+  assert.match(employeeRootGate,/if\(currentMode==='pass'\)return <>\{children\}<\/>/);
+  assert.match(employeeRootGate,/decide\('redirecting'\);window\.location\.replace\(target\)/);
   assert.match(employeeRootGate,/No restricted screen was opened/);
 });
 
