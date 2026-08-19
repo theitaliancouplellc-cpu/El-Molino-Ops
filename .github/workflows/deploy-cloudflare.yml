@@ -78,7 +78,7 @@ jobs:
           largest_asset_path="${largest_asset#*$'\t'}"
           test "$largest_asset_bytes" -le 26214400 || { echo "::error::Static asset exceeds 25 MiB: $largest_asset_path"; exit 1; }
 
-          npx wrangler deploy --name "$STAGING_WORKER" --dry-run --outdir /tmp/cloudflare-release-dry-run 2>&1 | tee /tmp/cloudflare-release-dry-run.log
+          npx wrangler deploy --env certification --name "$STAGING_WORKER" --dry-run --outdir /tmp/cloudflare-release-dry-run 2>&1 | tee /tmp/cloudflare-release-dry-run.log
           python3 - <<'PY'
           import re
           s=open('/tmp/cloudflare-release-dry-run.log').read()
@@ -131,7 +131,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          EL_MOLINO_RELEASE_SHA="$TARGET_SHA" RELEASE_SHA="$TARGET_SHA" npx wrangler deploy --name "$STAGING_WORKER" --keep-vars 2>&1 | tee /tmp/cf-staging-deploy.log
+          EL_MOLINO_RELEASE_SHA="$TARGET_SHA" RELEASE_SHA="$TARGET_SHA" npx wrangler deploy --env certification --name "$STAGING_WORKER" --keep-vars 2>&1 | tee /tmp/cf-staging-deploy.log
           SUBDOMAIN="$(cat /tmp/cf-subdomain)"
           printf 'https://%s.%s.workers.dev' "$STAGING_WORKER" "$SUBDOMAIN" > /tmp/cf-staging-url
 
