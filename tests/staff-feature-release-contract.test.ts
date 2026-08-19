@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {STAFF_FEATURES,isStaffNotificationReleased,isStaffRouteReleased,staffRouteFeature} from '../lib/staff-features';
+import {STAFF_FEATURES,isStaffNotificationReleased,isStaffProductPathAllowed,isStaffRouteReleased,staffRouteFeature} from '../lib/staff-features';
 
 const boundary=readFileSync('app/employee/staff-release-boundary.tsx','utf8');
 const layout=readFileSync('app/employee/layout.tsx','utf8');
@@ -24,16 +24,22 @@ test('staff feature release source hides unreleased operational domains',()=>{
   assert.equal(STAFF_FEATURES.notifications,true);
 });
 
-test('staff route release gate blocks hidden employee-prefixed routes and preserves released routes',()=>{
-  for(const route of ['/employee/training','/employee/training/assignment/123','/employee/time-clock','/employee/time-clock/history','/employee/tips']){
+test('staff route release gate fails closed for hidden and unknown employee routes',()=>{
+  for(const route of ['/employee/training','/employee/training/assignment/123','/employee/time-clock','/employee/time-clock/history','/employee/tips','/employee/future-module']){
     assert.equal(isStaffRouteReleased(route),false,route);
   }
-  for(const route of ['/employee','/employee/schedule','/employee/requests','/employee/shift-pool','/employee/team','/employee/notifications','/employee/more']){
+  for(const route of ['/employee','/employee/setup','/employee/access','/employee/schedule','/employee/requests','/employee/shift-pool','/employee/team','/employee/notifications','/employee/more']){
     assert.equal(isStaffRouteReleased(route),true,route);
   }
   assert.equal(staffRouteFeature('/employee/training'),'training');
   assert.equal(staffRouteFeature('/employee/time-clock'),'timeClock');
   assert.equal(staffRouteFeature('/employee/tips'),'tips');
+  assert.equal(staffRouteFeature('/employee/future-module'),null);
+});
+
+test('staff global product path allowlist rejects every legacy or management surface by default',()=>{
+  for(const route of ['/employee','/employee/schedule','/employee/requests','/employee/team','/employee/notifications','/employee/more','/account','/delete-account'])assert.equal(isStaffProductPathAllowed(route),true,route);
+  for(const route of ['/team','/discussions','/training','/time-clock','/tips','/schedule','/schedule/pool','/admin','/manager','/tools','/ops','/inventory','/calendar','/tasks','/shift','/saved','/ai-runtime-test','/employee/training','/employee/future-module'])assert.equal(isStaffProductPathAllowed(route),false,route);
 });
 
 test('employee layout fails closed visually before an unreleased route can render',()=>{
@@ -56,6 +62,8 @@ test('staff primary navigation is centralized and legacy per-page copies are sup
 
 test('hidden-domain notifications do not leak through Staff Home notification surfaces',()=>{
   assert.equal(isStaffNotificationReleased({href:'/employee/training',category:'training'}),false);
+  assert.equal(isStaffNotificationReleased({href:'/team',category:'team'}),false);
+  assert.equal(isStaffNotificationReleased({href:'/discussions',category:'team'}),false);
   assert.equal(isStaffNotificationReleased({href:null,event_key:'time_clock.punch_recorded'}),false);
   assert.equal(isStaffNotificationReleased({href:null,category:'tips'}),false);
   assert.equal(isStaffNotificationReleased({href:null,event_key:'payroll.finalized'}),false);
