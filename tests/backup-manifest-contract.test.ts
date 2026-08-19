@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {BACKUP_EXCLUDED_TABLES,BACKUP_FORMAT,BACKUP_TABLES} from '../lib/backup-manifest';
 
-const SERVER_RECOVERY_TABLE_COUNT=137;
+const SERVER_RECOVERY_TABLE_COUNT=139;
 const mustCover=[
   'employee_self_setup_claims','employee_self_setup_role_claims',
   'employee_employment_status_history','employee_role_change_requests','employee_role_change_request_roles','employee_role_assignment_history',
@@ -10,7 +10,7 @@ const mustCover=[
   'time_clock_punches','time_clock_breaks','time_clock_pay_periods',
   'toast_sync_state','toast_employee_map','toast_time_entries','toast_order_payments','toast_cash_entries','toast_deposits',
   'tip_pools','tip_pool_runs','tip_distributions',
-  'team_announcements','team_shoutouts','team_channels','team_channel_members','team_channel_messages',
+  'team_announcements','team_shoutouts','team_channels','team_channel_members','team_channel_messages','team_message_reactions','team_message_mentions',
   'training_courses','training_course_assignments','training_quiz_attempts',
   'hiring_applicants','hiring_offers',
   'onboarding_packages','onboarding_assignments',
