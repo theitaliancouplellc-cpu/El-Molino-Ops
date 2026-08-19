@@ -25,9 +25,10 @@ test('employment lifecycle is a constrained authoritative state machine',()=>{
 test('employee lifecycle gate is fail-closed before restricted content can render',()=>{
   assert.match(rootLayout,/<EmployeeRootRedirect>[\s\S]*\{children\}[\s\S]*<\/EmployeeRootRedirect>/);
   assert.match(guard,/type GateMode='checking'\|'pass'\|'redirecting'\|'error'/);
-  assert.match(guard,/const \[mode,setMode\]=useState<GateMode>\(publicInformationPath\(pathname\)\?'pass':'checking'\)/);
-  assert.match(guard,/if\(mode==='pass'\)return <>\{children\}<\/>/);
-  assert.match(guard,/if\(mode==='error'\)return/);
+  assert.match(guard,/const \[decision,setDecision\]=useState<GateDecision>\(\(\)=>\(\{path:pathname,mode:publicInformationPath\(pathname\)\?'pass':'checking'\}\)\)/);
+  assert.match(guard,/const currentMode=decision\.path===pathname\?decision\.mode:'checking'/);
+  assert.match(guard,/if\(currentMode==='pass'\)return <>\{children\}<\/>/);
+  assert.match(guard,/if\(currentMode==='error'\)return/);
   assert.match(guard,/No restricted screen was opened/);
   assert.match(guard,/return <div className="full-loader" aria-live="polite">/);
 });
@@ -40,8 +41,8 @@ test('employee lifecycle gate routes unapproved suspended and inactive staff wit
   assert.match(guard,/setup\.access_allowed===false/);
   assert.match(guard,/target=['"]\/employee\/access['"]/);
   assert.match(guard,/lifecycleException/);
-  assert.match(guard,/if\(target&&target!==pathname\)\{setMode\('redirecting'\);window\.location\.replace\(target\);return\}/);
-  assert.match(guard,/setMode\('pass'\);/);
+  assert.match(guard,/if\(target&&target!==pathname\)\{decide\('redirecting'\);window\.location\.replace\(target\);return\}/);
+  assert.match(guard,/decide\('pass'\);/);
   assert.match(access,/Access suspended/);
   assert.match(access,/Account inactive/);
   assert.match(access,/Check access again/);
