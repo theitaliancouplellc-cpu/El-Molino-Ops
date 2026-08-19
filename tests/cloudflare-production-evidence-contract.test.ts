@@ -51,6 +51,8 @@ test('verifier publishes a stable commit status and sanitized exact-SHA artifact
   assert.match(evidence, /release_header_sha/);
   assert.match(evidence, /required_health_checks_ok/);
   assert.match(evidence, /root_smoke_ok/);
+  assert.match(evidence, /Ensure sanitized failure evidence exists/);
+  assert.match(evidence, /production evidence verifier failed before exact release evidence could be completed/);
   assert.doesNotMatch(evidence, /fs\.writeFileSync\([^\n]*CLOUDFLARE_API_TOKEN/);
   assert.doesNotMatch(evidence, /fs\.writeFileSync\([^\n]*CLOUDFLARE_ACCOUNT_ID/);
 });
