@@ -167,12 +167,32 @@ jobs:
 
           python3 - <<'PY'
           import json
+
+          # Wrangler --format json pretty-prints each event across multiple lines rather
+          # than emitting one JSON object per line. Parse concatenated top-level JSON
+          # documents directly so genuine captured events cannot be discarded by a JSONL
+          # assumption.
+          text=open('/tmp/cf-tail.jsonl',errors='ignore').read()
+          decoder=json.JSONDecoder()
+          objects=[]
+          cursor=0
+          while cursor < len(text):
+            start=text.find('{',cursor)
+            if start < 0:
+              break
+            try:
+              obj,end=decoder.raw_decode(text,start)
+            except json.JSONDecodeError:
+              cursor=start+1
+              continue
+            if isinstance(obj,dict):
+              objects.append(obj)
+            cursor=end
+
           bad=[]; seen=0; health_seen=0
-          for line in open('/tmp/cf-tail.jsonl',errors='ignore'):
-            line=line.strip()
-            if not line.startswith('{'): continue
-            try: x=json.loads(line)
-            except: continue
+          for x in objects:
+            if 'event' not in x and 'outcome' not in x:
+              continue
             seen+=1
             outcome=str(x.get('outcome','')).lower()
             exc=x.get('exceptions') or []
