@@ -78,7 +78,7 @@ jobs:
           largest_asset_path="${largest_asset#*$'\t'}"
           test "$largest_asset_bytes" -le 26214400 || { echo "::error::Static asset exceeds 25 MiB: $largest_asset_path"; exit 1; }
 
-          npx wrangler deploy --name "$STAGING_WORKER" --dry-run --outdir /tmp/cloudflare-release-dry-run 2>&1 | tee /tmp/cloudflare-release-dry-run.log
+          npx wrangler deploy --env certification --name "$STAGING_WORKER" --dry-run --outdir /tmp/cloudflare-release-dry-run 2>&1 | tee /tmp/cloudflare-release-dry-run.log
           python3 - <<'PY'
           import re
           s=open('/tmp/cloudflare-release-dry-run.log').read()
@@ -131,7 +131,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          EL_MOLINO_RELEASE_SHA="$TARGET_SHA" RELEASE_SHA="$TARGET_SHA" npx wrangler deploy --name "$STAGING_WORKER" --keep-vars 2>&1 | tee /tmp/cf-staging-deploy.log
+          EL_MOLINO_RELEASE_SHA="$TARGET_SHA" RELEASE_SHA="$TARGET_SHA" npx wrangler deploy --env certification --name "$STAGING_WORKER" --keep-vars 2>&1 | tee /tmp/cf-staging-deploy.log
           SUBDOMAIN="$(cat /tmp/cf-subdomain)"
           printf 'https://%s.%s.workers.dev' "$STAGING_WORKER" "$SUBDOMAIN" > /tmp/cf-staging-url
 
@@ -141,13 +141,21 @@ jobs:
           set -euo pipefail
           URL="$(cat /tmp/cf-staging-url)"
           CODE=''
+          HEADER_SHA=''
+          BODY_SHA=''
+          IDENTITY_MATCHED=false
           for i in {1..60}; do
             CODE="$(curl -sS -D /tmp/staging-health.headers -o /tmp/staging-health.json -w '%{http_code}' -H 'Cache-Control: no-cache, no-store, max-age=0' "$URL/api/health?release=$TARGET_SHA&attempt=$i" || true)"
-            if [ "$CODE" = 200 ]; then break; fi
+            HEADER_SHA="$(awk -F': ' 'tolower($1)=="x-el-molino-release" {gsub("\r",""); print $2}' /tmp/staging-health.headers 2>/dev/null | tail -1)"
+            BODY_SHA="$(node -e "try{const h=JSON.parse(require('fs').readFileSync('/tmp/staging-health.json','utf8'));process.stdout.write(h.release?.sha||'')}catch{}")"
+            if [ "$CODE" = 200 ] && [ "$BODY_SHA" = "$TARGET_SHA" ] && [ "$HEADER_SHA" = "$TARGET_SHA" ]; then
+              IDENTITY_MATCHED=true
+              break
+            fi
+            echo "Staging release identity not propagated yet (attempt $i): status=${CODE:-none} body=${BODY_SHA:-none} header=${HEADER_SHA:-none}"
             sleep 2
           done
-          test "$CODE" = 200 || { cat /tmp/staging-health.json || true; exit 1; }
-          HEADER_SHA="$(awk -F': ' 'tolower($1)=="x-el-molino-release" {gsub("\r",""); print $2}' /tmp/staging-health.headers | tail -1)"
+          test "$IDENTITY_MATCHED" = true || { echo '::error::Exact staging release identity did not propagate within the bounded verification window'; cat /tmp/staging-health.headers || true; cat /tmp/staging-health.json || true; exit 1; }
           node - <<'NODE'
           const fs=require('fs'); const h=JSON.parse(fs.readFileSync('/tmp/staging-health.json','utf8')); const expected=process.env.TARGET_SHA;
           if(!h.ok) throw new Error('staging health not ok');
@@ -215,13 +223,21 @@ jobs:
           set -euo pipefail
           URL="$(cat /tmp/cf-production-url)"
           CODE=''
+          HEADER_SHA=''
+          BODY_SHA=''
+          IDENTITY_MATCHED=false
           for i in {1..60}; do
             CODE="$(curl -sS -D /tmp/production-health.headers -o /tmp/production-health.json -w '%{http_code}' -H 'Cache-Control: no-cache, no-store, max-age=0' "$URL/api/health?release=$TARGET_SHA&attempt=$i" || true)"
-            if [ "$CODE" = 200 ]; then break; fi
+            HEADER_SHA="$(awk -F': ' 'tolower($1)=="x-el-molino-release" {gsub("\r",""); print $2}' /tmp/production-health.headers 2>/dev/null | tail -1)"
+            BODY_SHA="$(node -e "try{const h=JSON.parse(require('fs').readFileSync('/tmp/production-health.json','utf8'));process.stdout.write(h.release?.sha||'')}catch{}")"
+            if [ "$CODE" = 200 ] && [ "$BODY_SHA" = "$TARGET_SHA" ] && [ "$HEADER_SHA" = "$TARGET_SHA" ]; then
+              IDENTITY_MATCHED=true
+              break
+            fi
+            echo "Production release identity not propagated yet (attempt $i): status=${CODE:-none} body=${BODY_SHA:-none} header=${HEADER_SHA:-none}"
             sleep 2
           done
-          test "$CODE" = 200 || { cat /tmp/production-health.json || true; exit 1; }
-          HEADER_SHA="$(awk -F': ' 'tolower($1)=="x-el-molino-release" {gsub("\r",""); print $2}' /tmp/production-health.headers | tail -1)"
+          test "$IDENTITY_MATCHED" = true || { echo '::error::Exact production release identity did not propagate within the bounded verification window'; cat /tmp/production-health.headers || true; cat /tmp/production-health.json || true; exit 1; }
           node - <<'NODE'
           const fs=require('fs'); const h=JSON.parse(fs.readFileSync('/tmp/production-health.json','utf8')); const expected=process.env.TARGET_SHA;
           if(!h.ok) throw new Error('production health not ok');

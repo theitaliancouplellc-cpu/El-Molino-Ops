@@ -122,7 +122,7 @@ jobs:
           largest_asset_path="${largest_asset#*$'\t'}"
           test "$largest_asset_bytes" -le 26214400 || { echo "::error::Static asset exceeds 25 MiB: $largest_asset_path"; exit 1; }
 
-          npx wrangler deploy --name "$STAGING_WORKER" --dry-run --outdir /tmp/cf-cert-bundle 2>&1 | tee /tmp/cf-dry-run.log
+          npx wrangler deploy --env certification --name "$STAGING_WORKER" --dry-run --outdir /tmp/cf-cert-bundle 2>&1 | tee /tmp/cf-dry-run.log
           python3 - <<'PY'
           import re
           s=open('/tmp/cf-dry-run.log').read()
@@ -142,7 +142,7 @@ jobs:
         run: |
           set -euo pipefail
           EL_MOLINO_RELEASE_SHA="$TARGET_SHA" RELEASE_SHA="$TARGET_SHA" \
-            npx wrangler deploy --name "$STAGING_WORKER" --keep-vars 2>&1 | tee /tmp/cf-deploy.log
+            npx wrangler deploy --env certification --name "$STAGING_WORKER" --keep-vars 2>&1 | tee /tmp/cf-deploy.log
           SUBDOMAIN="$(cat /tmp/cf-subdomain)"
           URL="https://${STAGING_WORKER}.${SUBDOMAIN}.workers.dev"
           printf '%s' "$URL" > /tmp/cf-staging-url
@@ -153,14 +153,22 @@ jobs:
           set -euo pipefail
           URL="$(cat /tmp/cf-staging-url)"
           CODE=''
+          HEADER_SHA=''
+          BODY_SHA=''
+          IDENTITY_MATCHED=false
           for i in {1..60}; do
             CODE="$(curl -sS -D /tmp/health.headers -o /tmp/health.json -w '%{http_code}' -H 'Cache-Control: no-cache, no-store, max-age=0' "$URL/api/health?release=$TARGET_SHA&attempt=$i" || true)"
-            if [ "$CODE" = 200 ]; then break; fi
+            HEADER_SHA="$(awk -F': ' 'tolower($1)=="x-el-molino-release" {gsub("\r",""); print $2}' /tmp/health.headers 2>/dev/null | tail -1)"
+            BODY_SHA="$(node -e "try{const h=JSON.parse(require('fs').readFileSync('/tmp/health.json','utf8'));process.stdout.write(h.release?.sha||'')}catch{}")"
+            if [ "$CODE" = 200 ] && [ "$BODY_SHA" = "$TARGET_SHA" ] && [ "$HEADER_SHA" = "$TARGET_SHA" ]; then
+              IDENTITY_MATCHED=true
+              break
+            fi
+            echo "Release identity not propagated yet (attempt $i): status=${CODE:-none} body=${BODY_SHA:-none} header=${HEADER_SHA:-none}"
             sleep 2
           done
-          test "$CODE" = 200 || { cat /tmp/health.headers || true; cat /tmp/health.json || true; exit 1; }
+          test "$IDENTITY_MATCHED" = true || { echo '::error::Exact release identity did not propagate within the bounded verification window'; cat /tmp/health.headers || true; cat /tmp/health.json || true; exit 1; }
 
-          HEADER_SHA="$(awk -F': ' 'tolower($1)=="x-el-molino-release" {gsub("\r",""); print $2}' /tmp/health.headers | tail -1)"
           node - <<'NODE'
           const fs=require('fs');
           const h=JSON.parse(fs.readFileSync('/tmp/health.json','utf8'));
