@@ -1,6 +1,12 @@
--- Phase 2 archived-channel and read-receipt hardening.
+-- Phase 2 archived-channel, read-receipt, and FK-index hardening.
 -- Archived conversations are not readable or mutable through Staff message RPCs.
 -- Read evidence counts only currently active recipients at the channel location.
+-- Cover the two foreign keys introduced by v5 that were flagged by the Supabase performance advisor.
+
+create index if not exists team_channels_created_by_employee_idx
+  on public.team_channels(created_by_employee_id);
+create index if not exists team_message_mentions_channel_idx
+  on public.team_message_mentions(channel_id,created_at desc);
 
 create or replace function public.team_channel_messages_for_me(p_channel_id uuid,p_limit integer default 100)
 returns jsonb language sql stable security definer set search_path='pg_catalog','public' as $$
