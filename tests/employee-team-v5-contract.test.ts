@@ -6,6 +6,7 @@ const page=readFileSync('app/employee/team/page.tsx','utf8');
 const schema=readFileSync('docs/database/employee_team_communications_v5.sql','utf8');
 const readWatermark=readFileSync('docs/database/employee_team_communications_v5_1.sql','utf8');
 const releaseBoundary=readFileSync('docs/database/employee_team_communications_v5_2.sql','utf8');
+const archivedHardening=readFileSync('docs/database/employee_team_communications_v5_3.sql','utf8');
 const recovery=readFileSync('docs/database/backup_recovery_employee_team_v5.sql','utf8');
 const backup=readFileSync('lib/backup-manifest.ts','utf8');
 const features=readFileSync('lib/staff-features.ts','utf8');
@@ -67,6 +68,20 @@ test('replies mentions reactions and read evidence stay membership-gated',()=>{
   assert.match(page,/remove_team_message_reaction/);
   assert.match(page,/p_reply_to_message_id:replyTo\?\.id\|\|null/);
   assert.match(page,/p_mentioned_employee_ids:mentionIds\.length\?mentionIds:null/);
+});
+
+test('archived conversations cannot be read or reaction-mutated through Staff RPCs',()=>{
+  assert.match(archivedHardening,/join public\.team_channels c on c\.id=m\.channel_id and c\.location_id=me\.loc and c\.archived_at is null/);
+  assert.match(archivedHardening,/join public\.team_channels c on c\.id=x\.channel_id and c\.location_id=loc and c\.archived_at is null/);
+  assert.match(archivedHardening,/c\.id=x\.channel_id and c\.location_id=loc and c\.archived_at is null/);
+});
+
+test('message read evidence counts current active recipients only',()=>{
+  assert.match(archivedHardening,/cm\.employee_id<>l\.author_employee_id/);
+  assert.match(archivedHardening,/ce\.active and ce\.deleted_at is null and coalesce\(ce\.employment_status,'active'\)='active'/);
+  assert.match(archivedHardening,/'read_by_count'/);
+  assert.match(archivedHardening,/'recipient_count'/);
+  assert.doesNotMatch(archivedHardening,/count\(\*\)::int-1/);
 });
 
 test('private realtime broadcast is authorized by conversation membership and cleaned up client-side',()=>{
