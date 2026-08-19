@@ -212,6 +212,38 @@ jobs:
           },null,2)+'\n');
           NODE
 
+      - name: Ensure sanitized failure evidence exists
+        if: always() && steps.subject.outputs.target_sha != ''
+        shell: bash
+        env:
+          TARGET_SHA: ${{ steps.subject.outputs.target_sha }}
+          SOURCE_CONCLUSION: ${{ steps.subject.outputs.source_conclusion }}
+          SOURCE_RUN_ID: ${{ steps.subject.outputs.source_run_id }}
+          PRODUCTION_URL: ${{ steps.production.outputs.production_url }}
+          VERIFY_OUTCOME: ${{ steps.verify.outcome }}
+        run: |
+          set -euo pipefail
+          if [ -f /tmp/cloudflare-production-evidence.json ]; then
+            exit 0
+          fi
+          node - <<'NODE'
+          const fs=require('fs');
+          fs.writeFileSync('/tmp/cloudflare-production-evidence.json',JSON.stringify({
+            target_sha:process.env.TARGET_SHA,
+            source_workflow_run_id:process.env.SOURCE_RUN_ID||null,
+            source_conclusion:process.env.SOURCE_CONCLUSION||null,
+            verifier_run_id:process.env.GITHUB_RUN_ID,
+            production_worker:process.env.PRODUCTION_WORKER,
+            production_url:process.env.PRODUCTION_URL||null,
+            exact_identity_matched:false,
+            required_health_checks_ok:false,
+            root_smoke_ok:false,
+            observed_at:new Date().toISOString(),
+            verification_step_outcome:process.env.VERIFY_OUTCOME||null,
+            failure_reason:'production evidence verifier failed before exact release evidence could be completed',
+          },null,2)+'\n');
+          NODE
+
       - name: Upload sanitized exact-SHA production evidence
         if: always() && steps.subject.outputs.target_sha != ''
         uses: actions/upload-artifact@v4
