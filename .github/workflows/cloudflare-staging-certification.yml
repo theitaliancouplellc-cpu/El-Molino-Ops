@@ -1,0 +1,318 @@
+name: Cloudflare Staging Certification
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      target_sha:
+        description: Exact 40-character pull-request head SHA to certify
+        required: true
+        type: string
+      pr_number:
+        description: Open pull-request number whose head must equal target_sha
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: cloudflare-release-control-plane
+  cancel-in-progress: false
+
+jobs:
+  certify:
+    name: Exact-SHA Cloudflare staging certification
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      TARGET_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || inputs.target_sha }}
+      PR_NUMBER: ${{ github.event_name == 'pull_request' && github.event.pull_request.number || inputs.pr_number }}
+      STAGING_WORKER: el-molino-ops-certification
+      NEXT_PUBLIC_SUPABASE_URL: https://asuvgjxdmxizbnjrccsz.supabase.co
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_gtR8VfsQ5n-FPPbypnYKTw_f2k3Xyrk
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      GITHUB_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Validate exact PR identity and isolated target
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$STAGING_WORKER" != 'el-molino-ops'
+          test "${#TARGET_SHA}" -eq 40
+          printf '%s' "$TARGET_SHA" | grep -Eq '^[0-9a-f]{40}$'
+          printf '%s' "$PR_NUMBER" | grep -Eq '^[0-9]+$'
+
+          curl -fsS \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" \
+            > /tmp/pr.json
+
+          node - <<'NODE'
+          const fs = require('fs');
+          const pr = JSON.parse(fs.readFileSync('/tmp/pr.json', 'utf8'));
+          const expected = process.env.TARGET_SHA;
+          const repo = process.env.GITHUB_REPOSITORY;
+          if (pr.state !== 'open') throw new Error(`PR #${pr.number} is not open`);
+          if (pr.base?.ref !== 'main') throw new Error(`PR #${pr.number} does not target main`);
+          if (pr.head?.sha !== expected) throw new Error(`PR head mismatch: ${pr.head?.sha} != ${expected}`);
+          if (pr.head?.repo?.full_name !== repo) throw new Error('Fork PRs are not eligible for repository-secret staging certification');
+          NODE
+
+      - name: Require Cloudflare staging credentials and resolve workers.dev origin
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_API_TOKEN:-}" || { echo '::error::CLOUDFLARE_API_TOKEN unavailable'; exit 1; }
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}" || { echo '::error::CLOUDFLARE_ACCOUNT_ID unavailable'; exit 1; }
+          curl -fsS \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" \
+            > /tmp/cf-subdomain.json
+          node - <<'NODE'
+          const fs = require('fs');
+          const x = JSON.parse(fs.readFileSync('/tmp/cf-subdomain.json', 'utf8'));
+          if (!x.success || !x.result?.subdomain) throw new Error('Cloudflare workers.dev subdomain is unavailable');
+          fs.writeFileSync('/tmp/cf-subdomain', x.result.subdomain);
+          NODE
+
+      - name: Checkout immutable PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_SHA }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Prove immutable source checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+          test -z "$(git status --porcelain)"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Build exact SHA and enforce Cloudflare package limits
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --no-audit --no-fund
+          npx tsc --noEmit
+          EL_MOLINO_RELEASE_SHA="$TARGET_SHA" RELEASE_SHA="$TARGET_SHA" npm run cf:build
+
+          if ! grep -R -F -q --exclude='*.map' "$TARGET_SHA" .open-next/server-functions .open-next/middleware 2>/dev/null; then
+            echo "::error::Built OpenNext artifact does not contain expected release SHA: $TARGET_SHA"
+            exit 1
+          fi
+
+          largest_asset="$(find .open-next/assets -type f -printf '%s\t%P\n' | sort -nr | head -n 1)"
+          largest_asset_bytes="${largest_asset%%$'\t'*}"
+          largest_asset_path="${largest_asset#*$'\t'}"
+          test "$largest_asset_bytes" -le 26214400 || { echo "::error::Static asset exceeds 25 MiB: $largest_asset_path"; exit 1; }
+
+          npx wrangler deploy --name "$STAGING_WORKER" --dry-run --outdir /tmp/cf-cert-bundle 2>&1 | tee /tmp/cf-dry-run.log
+          python3 - <<'PY'
+          import re
+          s=open('/tmp/cf-dry-run.log').read()
+          m=re.search(r'Total Upload:\s*[^/]+/\s*(?:gzip:\s*)?([0-9.]+)\s*(KiB|MiB)',s,re.I)
+          if not m: raise SystemExit('compressed Worker size not found')
+          n=float(m.group(1)); unit=m.group(2).lower(); b=int(n*(1024 if unit=='kib' else 1024*1024))
+          open('/tmp/cf-compressed-bytes','w').write(str(b))
+          print('compressed_worker_bytes='+str(b))
+          if b>3_000_000: raise SystemExit('Worker exceeds Cloudflare Workers Free 3 MB compressed limit')
+          PY
+
+          printf '%s' "$largest_asset_path" > /tmp/cf-largest-asset-path
+          printf '%s' "$largest_asset_bytes" > /tmp/cf-largest-asset-bytes
+
+      - name: Deploy exact SHA to isolated Cloudflare staging Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          EL_MOLINO_RELEASE_SHA="$TARGET_SHA" RELEASE_SHA="$TARGET_SHA" \
+            npx wrangler deploy --name "$STAGING_WORKER" --keep-vars 2>&1 | tee /tmp/cf-deploy.log
+          SUBDOMAIN="$(cat /tmp/cf-subdomain)"
+          URL="https://${STAGING_WORKER}.${SUBDOMAIN}.workers.dev"
+          printf '%s' "$URL" > /tmp/cf-staging-url
+
+      - name: Verify staging health, root runtime, and exact release identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="$(cat /tmp/cf-staging-url)"
+          CODE=''
+          for i in {1..60}; do
+            CODE="$(curl -sS -D /tmp/health.headers -o /tmp/health.json -w '%{http_code}' -H 'Cache-Control: no-cache, no-store, max-age=0' "$URL/api/health?release=$TARGET_SHA&attempt=$i" || true)"
+            if [ "$CODE" = 200 ]; then break; fi
+            sleep 2
+          done
+          test "$CODE" = 200 || { cat /tmp/health.headers || true; cat /tmp/health.json || true; exit 1; }
+
+          HEADER_SHA="$(awk -F': ' 'tolower($1)=="x-el-molino-release" {gsub("\r",""); print $2}' /tmp/health.headers | tail -1)"
+          node - <<'NODE'
+          const fs=require('fs');
+          const h=JSON.parse(fs.readFileSync('/tmp/health.json','utf8'));
+          const expected=process.env.TARGET_SHA;
+          if(!h.ok) throw new Error('health not ok');
+          if(h.release?.sha!==expected) throw new Error(`release SHA mismatch ${h.release?.sha}`);
+          if(!h.checks?.filter(c=>c.required).every(c=>c.ok)) throw new Error('required health check failed');
+          NODE
+          test "$HEADER_SHA" = "$TARGET_SHA"
+          curl -fsS -H 'Cache-Control: no-cache, no-store, max-age=0' "$URL/?release=$TARGET_SHA" | grep -q 'El Molino Ops'
+          printf '%s' "$CODE" > /tmp/cf-health-status
+
+      - name: Record deployed Cloudflare version identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deployments status --name "$STAGING_WORKER" --json > /tmp/cf-deployment-status.json
+          cat /tmp/cf-deployment-status.json
+
+      - name: Capture synthetic runtime-tail evidence
+        id: runtime_tail
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="$(cat /tmp/cf-staging-url)"
+          : > /tmp/cf-tail.json
+          : > /tmp/cf-tail.err
+
+          npx wrangler tail "$STAGING_WORKER" --format json --method GET > /tmp/cf-tail.json 2>/tmp/cf-tail.err &
+          TAIL_PID=$!
+
+          cleanup_tail() {
+            kill -INT "$TAIL_PID" 2>/dev/null || true
+            for i in {1..10}; do
+              kill -0 "$TAIL_PID" 2>/dev/null || break
+              sleep 1
+            done
+            kill -TERM "$TAIL_PID" 2>/dev/null || true
+            wait "$TAIL_PID" 2>/dev/null || true
+          }
+          trap cleanup_tail EXIT
+
+          sleep 10
+          for i in {1..8}; do
+            curl -fsS "$URL/api/health?audit=cert-$i-$GITHUB_RUN_ID" >/dev/null
+            sleep 1
+          done
+          curl -fsS "$URL/?audit=cert-$GITHUB_RUN_ID" >/dev/null
+          sleep 10
+
+          cleanup_tail
+          trap - EXIT
+          test ! -s /tmp/cf-tail.err || cat /tmp/cf-tail.err
+
+          python3 - <<'PY'
+          import json, os
+          text=open('/tmp/cf-tail.json',errors='ignore').read()
+          decoder=json.JSONDecoder(); objects=[]; cursor=0
+          while cursor < len(text):
+            start=text.find('{',cursor)
+            if start < 0: break
+            try:
+              obj,end=decoder.raw_decode(text,start)
+            except json.JSONDecodeError:
+              cursor=start+1; continue
+            if isinstance(obj,dict): objects.append(obj)
+            cursor=end
+
+          seen=0; tagged=0; bad=[]
+          for x in objects:
+            if 'event' not in x and 'outcome' not in x: continue
+            seen+=1
+            outcome=str(x.get('outcome','')).lower()
+            exc=x.get('exceptions') or []
+            request=(x.get('event') or {}).get('request') or {}
+            url=str(request.get('url',''))
+            if '/api/health?audit=cert-' in url: tagged+=1
+            if outcome and outcome not in ('ok','unknown'): bad.append(outcome)
+            if exc: bad.append('exception')
+
+          evidence={
+            'target_sha': os.environ['TARGET_SHA'],
+            'pr_number': os.environ['PR_NUMBER'],
+            'staging_worker': os.environ['STAGING_WORKER'],
+            'tail_events': seen,
+            'tagged_health_events': tagged,
+            'runtime_failures': len(bad),
+          }
+          open('/tmp/cf-runtime-evidence.json','w').write(json.dumps(evidence,indent=2)+'\n')
+          print(json.dumps(evidence))
+          if seen < 1: raise SystemExit('no runtime tail events captured')
+          if tagged < 1: raise SystemExit('no tagged health invocation captured by tail')
+          if bad: raise SystemExit('runtime tail contained failures')
+          PY
+          touch /tmp/cf-tail-pass
+
+      - name: Build sanitized certification evidence
+        if: always()
+        shell: bash
+        run: |
+          set -u
+          python3 - <<'PY'
+          import json, os
+          def text(path, default='unavailable'):
+            try: return open(path).read().strip()
+            except Exception: return default
+          runtime={}
+          try: runtime=json.load(open('/tmp/cf-runtime-evidence.json'))
+          except Exception: pass
+          evidence={
+            'target_sha': os.environ.get('TARGET_SHA'),
+            'pr_number': os.environ.get('PR_NUMBER'),
+            'staging_worker': os.environ.get('STAGING_WORKER'),
+            'staging_url': text('/tmp/cf-staging-url'),
+            'compressed_worker_bytes': text('/tmp/cf-compressed-bytes'),
+            'largest_asset_path': text('/tmp/cf-largest-asset-path'),
+            'largest_asset_bytes': text('/tmp/cf-largest-asset-bytes'),
+            'health_status': text('/tmp/cf-health-status'),
+            'runtime_tail': runtime,
+            'data_scope': 'production Supabase public configuration; certification probes are GET-only and non-mutating',
+          }
+          open('cloudflare-staging-certification-evidence.json','w').write(json.dumps(evidence,indent=2)+'\n')
+          PY
+
+      - name: Preserve sanitized certification evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudflare-staging-certification-${{ env.TARGET_SHA }}
+          path: cloudflare-staging-certification-evidence.json
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Enforce canonical staging certification gate
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f /tmp/cf-tail-pass || { echo '::error::Runtime-tail evidence gate did not pass'; exit 1; }
+          test "$(cat /tmp/cf-health-status 2>/dev/null || true)" = '200' || { echo '::error::Exact-SHA health gate did not pass'; exit 1; }
+          {
+            echo '## Canonical Cloudflare staging certification — PASS'
+            echo
+            echo "- PR: #${PR_NUMBER}"
+            echo "- Exact head SHA: \`${TARGET_SHA}\`"
+            echo "- Worker: \`${STAGING_WORKER}\`"
+            echo "- URL: $(cat /tmp/cf-staging-url)"
+            echo "- Worker compressed bytes: $(cat /tmp/cf-compressed-bytes)"
+            echo '- Exact release identity: PASS'
+            echo '- Required health checks: PASS'
+            echo '- Root runtime smoke: PASS'
+            echo '- Runtime-tail synthetic invocation evidence: PASS'
+            echo '- Production mutation: NONE'
+          } >> "$GITHUB_STEP_SUMMARY"
