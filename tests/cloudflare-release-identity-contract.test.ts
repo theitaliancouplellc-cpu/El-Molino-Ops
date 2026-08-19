@@ -7,23 +7,33 @@ const stagingWorkflow = fs.readFileSync('.github/workflows/cloudflare-staging-ce
 const healthRoute = fs.readFileSync('app/api/health/route.ts', 'utf8');
 const nextConfig = fs.readFileSync('next.config.ts', 'utf8');
 
-function assertBoundedExactIdentityPropagation(workflow: string, label: string) {
-  assert.match(workflow, /for i in \{1\.\.60\}/, `${label} must bound release propagation polling`);
-  assert.match(workflow, /release=\$TARGET_SHA&attempt=\$i/, `${label} must probe the exact target release`);
-  assert.match(workflow, /IDENTITY_MATCHED=false/, `${label} must track exact identity convergence`);
-  assert.match(workflow, /BODY_SHA=.*h\.release\?\.sha/, `${label} must inspect the response release SHA during polling`);
-  assert.match(workflow, /HEADER_SHA=.*x-el-molino-release/, `${label} must inspect the release header during polling`);
+function workflowStep(workflow: string, name: string, nextName?: string) {
+  const startMarker = `- name: ${name}`;
+  const start = workflow.indexOf(startMarker);
+  assert.notEqual(start, -1, `workflow step not found: ${name}`);
+  if (!nextName) return workflow.slice(start);
+  const end = workflow.indexOf(`- name: ${nextName}`, start + startMarker.length);
+  assert.notEqual(end, -1, `next workflow step not found: ${nextName}`);
+  return workflow.slice(start, end);
+}
+
+function assertBoundedExactIdentityPropagation(step: string, label: string) {
+  assert.match(step, /for i in \{1\.\.60\}/, `${label} must bound release propagation polling`);
+  assert.match(step, /release=\$TARGET_SHA&attempt=\$i/, `${label} must probe the exact target release`);
+  assert.match(step, /IDENTITY_MATCHED=false/, `${label} must track exact identity convergence`);
+  assert.match(step, /BODY_SHA=.*h\.release\?\.sha/, `${label} must inspect the response release SHA during polling`);
+  assert.match(step, /HEADER_SHA=.*x-el-molino-release/, `${label} must inspect the release header during polling`);
   assert.match(
-    workflow,
+    step,
     /if \[ "\$CODE" = 200 \] && \[ "\$BODY_SHA" = "\$TARGET_SHA" \] && \[ "\$HEADER_SHA" = "\$TARGET_SHA" \]; then/,
     `${label} must not accept HTTP 200 until both release identities match`,
   );
   assert.doesNotMatch(
-    workflow,
+    step,
     /if \[ "\$CODE" = 200 \]; then break; fi/,
     `${label} must not stop propagation polling merely because an older Worker version is healthy`,
   );
-  assert.match(workflow, /test "\$IDENTITY_MATCHED" = true/, `${label} must fail closed if identity never converges`);
+  assert.match(step, /test "\$IDENTITY_MATCHED" = true/, `${label} must fail closed if identity never converges`);
 }
 
 test('Cloudflare production build bakes the immutable GitHub release SHA into the Next bundle', () => {
@@ -37,15 +47,34 @@ test('Cloudflare production build bakes the immutable GitHub release SHA into th
   assert.match(deployWorkflow, /grep -R -F -q/);
 });
 
-test('Cloudflare staging certification waits through version propagation without relaxing exact identity', () => {
-  assertBoundedExactIdentityPropagation(stagingWorkflow, 'staging certification');
-  assert.match(stagingWorkflow, /h\.release\?\.sha!==expected/);
-  assert.match(stagingWorkflow, /Exact release identity: PASS/);
+test('PR Cloudflare staging certification waits through version propagation without relaxing exact identity', () => {
+  const step = workflowStep(
+    stagingWorkflow,
+    'Verify staging health, root runtime, and exact release identity',
+    'Record deployed Cloudflare version identity',
+  );
+  assertBoundedExactIdentityPropagation(step, 'PR staging certification');
+  assert.match(step, /h\.release\?\.sha!==expected/);
+});
+
+test('main release staging gate waits for exact release identity before production', () => {
+  const step = workflowStep(
+    deployWorkflow,
+    'Gate production on exact-main staging health and root runtime',
+    'Capture exact-main staging runtime-tail evidence',
+  );
+  assertBoundedExactIdentityPropagation(step, 'main release staging gate');
+  assert.match(step, /h\.release\?\.sha!==expected/);
 });
 
 test('Cloudflare production smoke test rejects release identity drift after bounded propagation', () => {
   assert.match(deployWorkflow, /TARGET_SHA:\s*\$\{\{ github\.sha \}\}/);
-  assertBoundedExactIdentityPropagation(deployWorkflow, 'production release');
-  assert.match(deployWorkflow, /h\.release\?\.sha!==expected/);
+  const step = workflowStep(
+    deployWorkflow,
+    'Verify exact production release identity',
+    'Record final staging and production version identities',
+  );
+  assertBoundedExactIdentityPropagation(step, 'production release');
+  assert.match(step, /h\.release\?\.sha!==expected/);
   assert.match(deployWorkflow, /Exact production release identity and required health: PASS/);
 });
