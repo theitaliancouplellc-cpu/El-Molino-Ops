@@ -3,11 +3,8 @@
 import {useEffect} from 'react';
 import {usePathname} from 'next/navigation';
 import {supabase} from '@/lib/supabase';
-import {isStaffRouteReleased} from '@/lib/staff-features';
+import {isStaffProductPathAllowed} from '@/lib/staff-features';
 
-const STAFF_SHARED_ALLOWED_PREFIXES=['/account','/delete-account'] as const;
-const sharedStaffPathAllowed=(pathname:string)=>STAFF_SHARED_ALLOWED_PREFIXES.some(prefix=>pathname===prefix||pathname.startsWith(`${prefix}/`));
-const activeStaffPathAllowed=(pathname:string)=>pathname.startsWith('/employee')?isStaffRouteReleased(pathname):sharedStaffPathAllowed(pathname);
 const setupException=(pathname:string)=>pathname==='/account'||pathname.startsWith('/delete-account');
 const lifecycleException=(pathname:string)=>pathname==='/employee/access'||setupException(pathname);
 
@@ -33,7 +30,7 @@ export default function EmployeeRootRedirect(){
     if(!lifecycleException(pathname))window.location.replace('/employee/access');
     return;
    }
-   if(pathname==='/employee/access'||pathname==='/employee/setup'||pathname==='/'||!activeStaffPathAllowed(pathname))window.location.replace('/employee');
+   if(pathname==='/employee/access'||pathname==='/employee/setup'||pathname==='/'||!isStaffProductPathAllowed(pathname))window.location.replace('/employee');
   })();
   return()=>{mounted=false};
  },[pathname]);
