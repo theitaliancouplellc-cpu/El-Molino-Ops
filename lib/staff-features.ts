@@ -32,21 +32,21 @@ export function staffFeatureEnabled(feature: StaffFeature): boolean {
   return STAFF_FEATURES[feature] === true;
 }
 
-type RouteReleaseRule = {prefix: string; feature: StaffFeature};
+type RouteReleaseRule = {path: string; feature: StaffFeature};
 
-// Most-specific employee routes first. Released feature families may own nested
-// routes, but lifecycle/shared exceptions are exact so unknown future routes fail closed.
+// Every currently implemented Staff route is explicit. Adding a future child or
+// sibling route does not release it accidentally; it must be added here deliberately.
 const STAFF_ROUTE_RELEASE_RULES: readonly RouteReleaseRule[] = [
-  {prefix: '/employee/notifications/preferences', feature: 'notificationPreferences'},
-  {prefix: '/employee/notifications', feature: 'notifications'},
-  {prefix: '/employee/shift-pool', feature: 'openShifts'},
-  {prefix: '/employee/time-clock', feature: 'timeClock'},
-  {prefix: '/employee/training', feature: 'training'},
-  {prefix: '/employee/requests', feature: 'requests'},
-  {prefix: '/employee/schedule', feature: 'schedule'},
-  {prefix: '/employee/team', feature: 'communications'},
-  {prefix: '/employee/more', feature: 'account'},
-  {prefix: '/employee/tips', feature: 'tips'},
+  {path: '/employee/notifications/preferences', feature: 'notificationPreferences'},
+  {path: '/employee/notifications', feature: 'notifications'},
+  {path: '/employee/shift-pool', feature: 'openShifts'},
+  {path: '/employee/time-clock', feature: 'timeClock'},
+  {path: '/employee/training', feature: 'training'},
+  {path: '/employee/requests', feature: 'requests'},
+  {path: '/employee/schedule', feature: 'schedule'},
+  {path: '/employee/team', feature: 'communications'},
+  {path: '/employee/more', feature: 'account'},
+  {path: '/employee/tips', feature: 'tips'},
 ];
 
 const STAFF_LIFECYCLE_PATHS = new Set<string>(['/employee/setup', '/employee/access']);
@@ -63,7 +63,7 @@ function routeMatches(pathname: string, prefix: string): boolean {
 export function staffRouteFeature(pathname: string): StaffFeature | null {
   const normalized = normalizedPath(pathname);
   if (normalized === '/employee') return 'home';
-  return STAFF_ROUTE_RELEASE_RULES.find((rule) => routeMatches(normalized, rule.prefix))?.feature ?? null;
+  return STAFF_ROUTE_RELEASE_RULES.find((rule) => normalized === rule.path)?.feature ?? null;
 }
 
 export function isStaffRouteReleased(pathname: string): boolean {
