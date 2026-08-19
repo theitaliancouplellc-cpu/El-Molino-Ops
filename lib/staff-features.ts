@@ -9,7 +9,7 @@ export const STAFF_FEATURES = Object.freeze({
   openShifts: true,
   communications: true,
   directMessages: true,
-  groupChats: false,
+  groupChats: true,
   systemChannels: false,
   announcements: true,
   team: true,
