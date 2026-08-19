@@ -64,7 +64,8 @@ test('private realtime broadcast is authorized by conversation membership and cl
   assert.match(schema,/realtime\.messages\.extension='broadcast'/);
   assert.match(schema,/realtime\.broadcast_changes/);
   assert.match(schema,/revoke all on function private\.broadcast_team_channel_change\(\) from public,anon,authenticated/);
-  assert.match(page,/supabase\.realtime\.setAuth\(\)/);
+  assert.match(page,/await supabase\.realtime\.setAuth\(\)/);
+  assert.doesNotMatch(page,/void supabase\.realtime\.setAuth\(\)/);
   assert.match(page,/channel\(`team:\$\{selectedChannel\}`,[\s\S]*private:true/);
   assert.match(page,/supabase\.removeChannel\(realtime\)/);
   assert.doesNotMatch(page,/postgres_changes/);
