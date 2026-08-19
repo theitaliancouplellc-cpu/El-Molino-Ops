@@ -55,7 +55,8 @@ test('employee tips page uses only the finalized-own-tip report',()=>{
 
 test('Staff product routing is deny-by-default and permits only explicitly released employee surfaces',()=>{
   assert.match(guard,/isStaffProductPathAllowed/);
-  assert.match(guard,/profileResult\.data\.app_role!==['"]employee['"]\)\{setMode\('pass'\);return\}/);
+  assert.match(guard,/profileResult\.data\.app_role!==['"]employee['"]\)\{decide\('pass'\);return\}/);
+  assert.match(guard,/const currentMode=decision\.path===pathname\?decision\.mode:'checking'/);
 
   for(const allowed of [
     '/employee',
@@ -99,7 +100,8 @@ test('Staff product routing is deny-by-default and permits only explicitly relea
 });
 
 test('management implementations remain available to authorized manager/admin roles',()=>{
-  assert.match(guard,/profileResult\.data\.app_role!==['"]employee['"]\)\{setMode\('pass'\);return\}/);
+  assert.match(guard,/profileResult\.data\.app_role!==['"]employee['"]\)\{decide\('pass'\);return\}/);
+  assert.match(guard,/if\(currentMode==='pass'\)return <>\{children\}<\/>/);
   assert.match(manager,/export default function ManagerPage/);
   assert.match(manager,/\['admin','manager'\]\.includes\(me\.app_role\)/);
   assert.match(manager,/href="\/time-clock"/);
