@@ -9,23 +9,46 @@ permissions:
   contents: read
 
 concurrency:
-  group: cloudflare-production
+  group: cloudflare-release-control-plane
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+  release:
+    name: Exact-main staging gate and production release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
     env:
+      PRODUCTION_WORKER: el-molino-ops
+      STAGING_WORKER: el-molino-ops-certification
       NEXT_PUBLIC_SUPABASE_URL: https://asuvgjxdmxizbnjrccsz.supabase.co
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_gtR8VfsQ5n-FPPbypnYKTw_f2k3Xyrk
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      EL_MOLINO_RELEASE_SHA: ${{ github.sha }}
+      TARGET_SHA: ${{ github.sha }}
 
     steps:
-      - name: Checkout certified source
-        uses: actions/checkout@v6
+      - name: Require canonical main release event
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/main' || { echo '::error::Production Cloudflare release must run from main'; exit 1; }
+          test "$STAGING_WORKER" != "$PRODUCTION_WORKER"
+          test "${#TARGET_SHA}" -eq 40
+          printf '%s' "$TARGET_SHA" | grep -Eq '^[0-9a-f]{40}$'
+
+      - name: Checkout exact main SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_SHA }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Prove immutable main source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+          test -z "$(git status --porcelain)"
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -34,169 +57,219 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
 
-      - name: Install locked dependencies
-        run: npm ci --no-audit --no-fund
-
-      - name: Run release gates
-        run: |
-          npx tsc --noEmit
-          npm test
-
-      - name: Build Cloudflare OpenNext worker
-        run: npm run cf:build
-
-      - name: Validate baked release identity before publish
-        env:
-          EXPECTED_RELEASE_SHA: ${{ github.sha }}
+      - name: Build and test exact main SHA
+        shell: bash
         run: |
           set -euo pipefail
-          test -n "$EXPECTED_RELEASE_SHA"
-          if ! grep -R -F -q --exclude='*.map' "$EXPECTED_RELEASE_SHA" .open-next/server-functions .open-next/middleware 2>/dev/null; then
-            echo "Built Cloudflare artifact does not contain expected release SHA: $EXPECTED_RELEASE_SHA" >&2
+          npm ci --no-audit --no-fund
+          npx tsc --noEmit
+          EL_MOLINO_RELEASE_SHA="$TARGET_SHA" RELEASE_SHA="$TARGET_SHA" npm run cf:build
+          if ! grep -R -F -q --exclude='*.map' "$TARGET_SHA" .open-next/server-functions .open-next/middleware 2>/dev/null; then
+            echo "::error::Built Cloudflare artifact does not contain expected release SHA: $TARGET_SHA"
             exit 1
           fi
-          echo "Built artifact contains expected release SHA: $EXPECTED_RELEASE_SHA"
 
-      - name: Validate Cloudflare Free production limits
-        id: limits
+      - name: Enforce Cloudflare Free package limits
+        shell: bash
         run: |
           set -euo pipefail
-
           largest_asset="$(find .open-next/assets -type f -printf '%s\t%P\n' | sort -nr | head -n 1)"
           largest_asset_bytes="${largest_asset%%$'\t'*}"
           largest_asset_path="${largest_asset#*$'\t'}"
-          max_asset_bytes=26214400
+          test "$largest_asset_bytes" -le 26214400 || { echo "::error::Static asset exceeds 25 MiB: $largest_asset_path"; exit 1; }
 
-          echo "largest-asset-bytes=$largest_asset_bytes" >> "$GITHUB_OUTPUT"
-          echo "largest-asset-path=$largest_asset_path" >> "$GITHUB_OUTPUT"
-          echo "Largest static asset: $largest_asset_path ($largest_asset_bytes bytes)"
+          npx wrangler deploy --env certification --name "$STAGING_WORKER" --dry-run --outdir /tmp/cloudflare-release-dry-run 2>&1 | tee /tmp/cloudflare-release-dry-run.log
+          python3 - <<'PY'
+          import re
+          s=open('/tmp/cloudflare-release-dry-run.log').read()
+          m=re.search(r'Total Upload:\s*[^/]+/\s*(?:gzip:\s*)?([0-9.]+)\s*(KiB|MiB)',s,re.I)
+          if not m: raise SystemExit('compressed Worker size not found')
+          n=float(m.group(1)); unit=m.group(2).lower(); b=int(n*(1024 if unit=='kib' else 1024*1024))
+          open('/tmp/cf-compressed-bytes','w').write(str(b))
+          print('compressed_worker_bytes='+str(b))
+          if b>3_000_000: raise SystemExit('Worker exceeds Cloudflare Workers Free 3 MB compressed limit')
+          PY
+          printf '%s' "$largest_asset_path" > /tmp/cf-largest-asset-path
+          printf '%s' "$largest_asset_bytes" > /tmp/cf-largest-asset-bytes
 
-          if [ "$largest_asset_bytes" -gt "$max_asset_bytes" ]; then
-            echo "Static asset exceeds Cloudflare Workers 25 MiB production limit."
-            exit 1
-          fi
-
-          npx wrangler deploy --dry-run --outdir /tmp/wrangler-dry-run 2>&1 | tee /tmp/wrangler-dry-run.log
-          gzip_kib="$(sed -nE 's/.*gzip: ([0-9]+([.][0-9]+)?) KiB.*/\1/p' /tmp/wrangler-dry-run.log | tail -n 1)"
-          test -n "$gzip_kib"
-          echo "worker-gzip-kib=$gzip_kib" >> "$GITHUB_OUTPUT"
-
-          node -e "const kib=Number(process.argv[1]); const freeLimit=3*1000*1000/1024; if(!Number.isFinite(kib)||kib>freeLimit){console.error('Worker exceeds Cloudflare Workers Free 3 MB gzip limit:',kib,'KiB');process.exit(1)} console.log('Worker gzip size:',kib,'KiB; Cloudflare Workers Free limit:',freeLimit.toFixed(2),'KiB')" "$gzip_kib"
-
-      - name: Require authenticated Cloudflare production credentials
-        if: ${{ env.CLOUDFLARE_API_TOKEN == '' || env.CLOUDFLARE_ACCOUNT_ID == '' }}
-        env:
-          WORKER_GZIP_KIB: ${{ steps.limits.outputs.worker-gzip-kib }}
-          LARGEST_ASSET_PATH: ${{ steps.limits.outputs.largest-asset-path }}
-          LARGEST_ASSET_BYTES: ${{ steps.limits.outputs.largest-asset-bytes }}
-        run: |
-          {
-            echo '## Cloudflare production deployment BLOCKED'
-            echo
-            echo "- Commit: \`${GITHUB_SHA}\`"
-            echo "- Worker: \`el-molino-ops\`"
-            echo '- Release gates: PASS'
-            echo '- OpenNext build: PASS'
-            echo "- Worker gzip: ${WORKER_GZIP_KIB} KiB (Free limit: 3 MB)"
-            echo "- Largest asset: \`${LARGEST_ASSET_PATH}\` (${LARGEST_ASSET_BYTES} bytes; limit: 25 MiB)"
-            echo '- Production package limits: PASS'
-            echo '- Publish: BLOCKED — GitHub Actions is missing CLOUDFLARE_API_TOKEN and/or CLOUDFLARE_ACCOUNT_ID'
-            echo '- This workflow fails closed so a skipped publish can never be reported as a successful production deployment.'
-          } >> "$GITHUB_STEP_SUMMARY"
-          echo 'Cloudflare production deployment credentials are missing. Failing closed.' >&2
-          exit 1
-
-      - name: Ensure account workers.dev subdomain exists
-        if: ${{ env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' }}
+      - name: Require authenticated Cloudflare credentials
+        shell: bash
         run: |
           set -euo pipefail
+          test -n "${CLOUDFLARE_API_TOKEN:-}" || { echo '::error::CLOUDFLARE_API_TOKEN unavailable'; exit 1; }
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}" || { echo '::error::CLOUDFLARE_ACCOUNT_ID unavailable'; exit 1; }
 
+      - name: Resolve or create account workers.dev subdomain
+        shell: bash
+        run: |
+          set -euo pipefail
           api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/subdomain"
-          status="$(curl -sS -o /tmp/cf-workers-subdomain.json -w '%{http_code}' \
-            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-            -H 'Content-Type: application/json' \
-            "$api")"
+          status="$(curl -sS -o /tmp/cf-workers-subdomain.json -w '%{http_code}' -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json' "$api")"
 
-          if [ "$status" = "200" ]; then
+          if [ "$status" = '200' ]; then
             existing="$(node -e "const fs=require('fs');const j=JSON.parse(fs.readFileSync('/tmp/cf-workers-subdomain.json','utf8'));process.stdout.write(j?.result?.subdomain||'')")"
             if [ -n "$existing" ]; then
-              echo "Cloudflare account workers.dev subdomain already exists."
+              printf '%s' "$existing" > /tmp/cf-subdomain
               exit 0
             fi
-          elif [ "$status" != "404" ]; then
-            echo "Unable to inspect Cloudflare workers.dev account subdomain (HTTP $status)." >&2
-            node -e "const fs=require('fs');const j=JSON.parse(fs.readFileSync('/tmp/cf-workers-subdomain.json','utf8'));console.error((j.errors||[]).map(e=>e.message).join('; ')||'Cloudflare API error')"
+          elif [ "$status" != '404' ]; then
+            echo "Unable to inspect Cloudflare workers.dev subdomain (HTTP $status)." >&2
             exit 1
           fi
 
           suffix="$(printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | sha256sum | cut -c1-10)"
           candidate="el-molino-ops-${suffix}"
-          echo "No workers.dev account subdomain exists; creating a deterministic deployment subdomain."
+          curl -fsS -X PUT "$api" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json' --data "{\"subdomain\":\"${candidate}\"}" > /tmp/cf-workers-subdomain-create.json
+          node - <<'NODE'
+          const fs=require('fs');
+          const j=JSON.parse(fs.readFileSync('/tmp/cf-workers-subdomain-create.json','utf8'));
+          if(!j.success||!j.result?.subdomain) throw new Error((j.errors||[]).map(e=>e.message).join('; ')||'Cloudflare subdomain creation failed');
+          fs.writeFileSync('/tmp/cf-subdomain',j.result.subdomain);
+          NODE
 
-          curl -fsS -X PUT "$api" \
-            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-            -H 'Content-Type: application/json' \
-            --data "{\"subdomain\":\"${candidate}\"}" \
-            > /tmp/cf-workers-subdomain-create.json
-
-          node -e "const fs=require('fs');const j=JSON.parse(fs.readFileSync('/tmp/cf-workers-subdomain-create.json','utf8'));if(!j.success||!j.result?.subdomain){console.error((j.errors||[]).map(e=>e.message).join('; ')||'Cloudflare subdomain creation failed');process.exit(1)} console.log('Cloudflare workers.dev account subdomain created successfully.')"
-
-      - name: Deploy production Worker
-        id: cloudflare
-        uses: cloudflare/wrangler-action@v4
-        with:
-          apiToken: ${{ env.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
-          command: deploy
-          packageManager: npm
-
-      - name: Smoke test deployed Worker
-        env:
-          DEPLOYMENT_URL: ${{ steps.cloudflare.outputs.deployment-url }}
-          EXPECTED_RELEASE_SHA: ${{ github.sha }}
+      - name: Deploy exact main SHA to certification Worker
+        shell: bash
         run: |
           set -euo pipefail
-          test -n "$DEPLOYMENT_URL"
-          test -n "$EXPECTED_RELEASE_SHA"
-          echo "Deployment URL: $DEPLOYMENT_URL"
+          EL_MOLINO_RELEASE_SHA="$TARGET_SHA" RELEASE_SHA="$TARGET_SHA" npx wrangler deploy --env certification --name "$STAGING_WORKER" --keep-vars 2>&1 | tee /tmp/cf-staging-deploy.log
+          SUBDOMAIN="$(cat /tmp/cf-subdomain)"
+          printf 'https://%s.%s.workers.dev' "$STAGING_WORKER" "$SUBDOMAIN" > /tmp/cf-staging-url
 
-          matched=false
-          last_seen='unavailable'
+      - name: Gate production on exact-main staging health and root runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="$(cat /tmp/cf-staging-url)"
+          CODE=''
+          HEADER_SHA=''
+          BODY_SHA=''
+          IDENTITY_MATCHED=false
           for i in {1..60}; do
-            url="${DEPLOYMENT_URL}/api/health?release=${EXPECTED_RELEASE_SHA}&attempt=${i}"
-            if curl -fsS -H 'Cache-Control: no-cache, no-store, max-age=0' "$url" > /tmp/health.json; then
-              last_seen="$(node -e "const fs=require('fs');const h=JSON.parse(fs.readFileSync('/tmp/health.json','utf8'));process.stdout.write(String(h.release?.sha||'missing'))")"
-              if EXPECTED_RELEASE_SHA="$EXPECTED_RELEASE_SHA" node -e "const h=require('/tmp/health.json');const expected=process.env.EXPECTED_RELEASE_SHA;if(!h.ok||!h.checks?.filter(c=>c.required).every(c=>c.ok)||h.release?.sha!==expected)process.exit(1)"; then
-                matched=true
-                break
-              fi
+            CODE="$(curl -sS -D /tmp/staging-health.headers -o /tmp/staging-health.json -w '%{http_code}' -H 'Cache-Control: no-cache, no-store, max-age=0' "$URL/api/health?release=$TARGET_SHA&attempt=$i" || true)"
+            HEADER_SHA="$(awk -F': ' 'tolower($1)=="x-el-molino-release" {gsub("\r",""); print $2}' /tmp/staging-health.headers 2>/dev/null | tail -1)"
+            BODY_SHA="$(node -e "try{const h=JSON.parse(require('fs').readFileSync('/tmp/staging-health.json','utf8'));process.stdout.write(h.release?.sha||'')}catch{}")"
+            if [ "$CODE" = 200 ] && [ "$BODY_SHA" = "$TARGET_SHA" ] && [ "$HEADER_SHA" = "$TARGET_SHA" ]; then
+              IDENTITY_MATCHED=true
+              break
             fi
-            echo "Waiting for Cloudflare release propagation ($i/60); live release: $last_seen; expected: $EXPECTED_RELEASE_SHA"
+            echo "Staging release identity not propagated yet (attempt $i): status=${CODE:-none} body=${BODY_SHA:-none} header=${HEADER_SHA:-none}"
             sleep 2
           done
+          test "$IDENTITY_MATCHED" = true || { echo '::error::Exact staging release identity did not propagate within the bounded verification window'; cat /tmp/staging-health.headers || true; cat /tmp/staging-health.json || true; exit 1; }
+          node - <<'NODE'
+          const fs=require('fs'); const h=JSON.parse(fs.readFileSync('/tmp/staging-health.json','utf8')); const expected=process.env.TARGET_SHA;
+          if(!h.ok) throw new Error('staging health not ok');
+          if(h.release?.sha!==expected) throw new Error(`staging release mismatch ${h.release?.sha}`);
+          if(!h.checks?.filter(c=>c.required).every(c=>c.ok)) throw new Error('staging required health check failed');
+          NODE
+          test "$HEADER_SHA" = "$TARGET_SHA"
+          curl -fsS -H 'Cache-Control: no-cache, no-store, max-age=0' "$URL/?release=$TARGET_SHA" | grep -q 'El Molino Ops'
 
-          cat /tmp/health.json || true
-          if [ "$matched" != true ]; then
-            echo "Production release identity mismatch after propagation window: $last_seen expected $EXPECTED_RELEASE_SHA" >&2
-            exit 1
-          fi
+      - name: Capture exact-main staging runtime-tail evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="$(cat /tmp/cf-staging-url)"
+          : > /tmp/cf-tail.json
+          : > /tmp/cf-tail.err
+          npx wrangler tail "$STAGING_WORKER" --format json --method GET > /tmp/cf-tail.json 2>/tmp/cf-tail.err &
+          TAIL_PID=$!
+          cleanup_tail() {
+            kill -INT "$TAIL_PID" 2>/dev/null || true
+            for i in {1..10}; do kill -0 "$TAIL_PID" 2>/dev/null || break; sleep 1; done
+            kill -TERM "$TAIL_PID" 2>/dev/null || true
+            wait "$TAIL_PID" 2>/dev/null || true
+          }
+          trap cleanup_tail EXIT
+          sleep 10
+          for i in {1..8}; do curl -fsS "$URL/api/health?audit=release-$i-$GITHUB_RUN_ID" >/dev/null; sleep 1; done
+          sleep 10
+          cleanup_tail
+          trap - EXIT
+          test ! -s /tmp/cf-tail.err || cat /tmp/cf-tail.err
+          python3 - <<'PY'
+          import json
+          text=open('/tmp/cf-tail.json',errors='ignore').read(); decoder=json.JSONDecoder(); objects=[]; cursor=0
+          while cursor < len(text):
+            start=text.find('{',cursor)
+            if start < 0: break
+            try: obj,end=decoder.raw_decode(text,start)
+            except json.JSONDecodeError: cursor=start+1; continue
+            if isinstance(obj,dict): objects.append(obj)
+            cursor=end
+          seen=tagged=0; bad=[]
+          for x in objects:
+            if 'event' not in x and 'outcome' not in x: continue
+            seen+=1; outcome=str(x.get('outcome','')).lower(); exc=x.get('exceptions') or []
+            url=str((((x.get('event') or {}).get('request') or {}).get('url','')))
+            if '/api/health?audit=release-' in url: tagged+=1
+            if outcome and outcome not in ('ok','unknown'): bad.append(outcome)
+            if exc: bad.append('exception')
+          print(f'tail_events={seen} tagged_health_events={tagged} runtime_failures={len(bad)}')
+          if seen < 1 or tagged < 1 or bad: raise SystemExit('staging runtime-tail gate failed')
+          PY
 
-          curl -fsS -H 'Cache-Control: no-cache, no-store, max-age=0' "${DEPLOYMENT_URL}/?release=${EXPECTED_RELEASE_SHA}" | grep -q 'El Molino Ops'
+      - name: Deploy already-built exact SHA to production Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          EL_MOLINO_RELEASE_SHA="$TARGET_SHA" RELEASE_SHA="$TARGET_SHA" npx wrangler deploy --name "$PRODUCTION_WORKER" --keep-vars 2>&1 | tee /tmp/cf-production-deploy.log
+          SUBDOMAIN="$(cat /tmp/cf-subdomain)"
+          printf 'https://%s.%s.workers.dev' "$PRODUCTION_WORKER" "$SUBDOMAIN" > /tmp/cf-production-url
 
-      - name: Publish production deployment summary
-        env:
-          DEPLOYMENT_URL: ${{ steps.cloudflare.outputs.deployment-url }}
-          WORKER_GZIP_KIB: ${{ steps.limits.outputs.worker-gzip-kib }}
+      - name: Verify exact production release identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="$(cat /tmp/cf-production-url)"
+          CODE=''
+          HEADER_SHA=''
+          BODY_SHA=''
+          IDENTITY_MATCHED=false
+          for i in {1..60}; do
+            CODE="$(curl -sS -D /tmp/production-health.headers -o /tmp/production-health.json -w '%{http_code}' -H 'Cache-Control: no-cache, no-store, max-age=0' "$URL/api/health?release=$TARGET_SHA&attempt=$i" || true)"
+            HEADER_SHA="$(awk -F': ' 'tolower($1)=="x-el-molino-release" {gsub("\r",""); print $2}' /tmp/production-health.headers 2>/dev/null | tail -1)"
+            BODY_SHA="$(node -e "try{const h=JSON.parse(require('fs').readFileSync('/tmp/production-health.json','utf8'));process.stdout.write(h.release?.sha||'')}catch{}")"
+            if [ "$CODE" = 200 ] && [ "$BODY_SHA" = "$TARGET_SHA" ] && [ "$HEADER_SHA" = "$TARGET_SHA" ]; then
+              IDENTITY_MATCHED=true
+              break
+            fi
+            echo "Production release identity not propagated yet (attempt $i): status=${CODE:-none} body=${BODY_SHA:-none} header=${HEADER_SHA:-none}"
+            sleep 2
+          done
+          test "$IDENTITY_MATCHED" = true || { echo '::error::Exact production release identity did not propagate within the bounded verification window'; cat /tmp/production-health.headers || true; cat /tmp/production-health.json || true; exit 1; }
+          node - <<'NODE'
+          const fs=require('fs'); const h=JSON.parse(fs.readFileSync('/tmp/production-health.json','utf8')); const expected=process.env.TARGET_SHA;
+          if(!h.ok) throw new Error('production health not ok');
+          if(h.release?.sha!==expected) throw new Error(`production release mismatch ${h.release?.sha}`);
+          if(!h.checks?.filter(c=>c.required).every(c=>c.ok)) throw new Error('production required health check failed');
+          NODE
+          test "$HEADER_SHA" = "$TARGET_SHA"
+          curl -fsS -H 'Cache-Control: no-cache, no-store, max-age=0' "$URL/?release=$TARGET_SHA" | grep -q 'El Molino Ops'
+
+      - name: Record final staging and production version identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deployments status --name "$STAGING_WORKER" --json > /tmp/cf-staging-status.json
+          npx wrangler deployments status --name "$PRODUCTION_WORKER" --json > /tmp/cf-production-status.json
+          cat /tmp/cf-production-status.json
+
+      - name: Publish canonical Cloudflare release summary
+        shell: bash
         run: |
           {
-            echo '## Cloudflare production deployment'
+            echo '## Canonical Cloudflare release — PASS'
             echo
-            echo "- Commit: \`${GITHUB_SHA}\`"
-            echo "- Worker: \`el-molino-ops\`"
-            echo "- Worker gzip: ${WORKER_GZIP_KIB} KiB"
-            echo "- URL: ${DEPLOYMENT_URL}"
-            echo '- Release artifact identity: PASS'
-            echo '- Release propagation identity: PASS'
-            echo '- Health check: PASS'
+            echo "- Exact main SHA: \`${TARGET_SHA}\`"
+            echo "- Certification Worker: \`${STAGING_WORKER}\`"
+            echo "- Certification URL: $(cat /tmp/cf-staging-url)"
+            echo "- Production Worker: \`${PRODUCTION_WORKER}\`"
+            echo "- Production URL: $(cat /tmp/cf-production-url)"
+            echo "- Worker compressed bytes: $(cat /tmp/cf-compressed-bytes)"
+            echo "- Largest asset: \`$(cat /tmp/cf-largest-asset-path)\` ($(cat /tmp/cf-largest-asset-bytes) bytes)"
+            echo '- Exact-main build and regression suite: PASS'
+            echo '- Exact-main staging health/root/runtime-tail: PASS'
             echo '- Production publish: PASS'
+            echo '- Exact production release identity and required health: PASS'
           } >> "$GITHUB_STEP_SUMMARY"
