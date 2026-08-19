@@ -49,6 +49,9 @@ test('message creation is idempotent and retries reuse a client message id',()=>
   assert.match(page,/pendingSendKey/);
   assert.match(page,/p_client_message_id:key/);
   assert.match(page,/pendingSendKey\.current=key/);
+  assert.match(page,/pendingSendKey\.current=null;setReplyTo\(m\)/);
+  assert.match(page,/pendingSendKey\.current=null;setReplyTo\(null\)/);
+  assert.match(page,/pendingSendKey\.current=null;setMentionIds/);
 });
 
 test('replies mentions reactions and read evidence stay membership-gated',()=>{
