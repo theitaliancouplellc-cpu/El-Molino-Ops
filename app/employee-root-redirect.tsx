@@ -3,6 +3,7 @@
 import {useEffect} from 'react';
 import {usePathname} from 'next/navigation';
 import {supabase} from '@/lib/supabase';
+import {isStaffRouteReleased} from '@/lib/staff-features';
 
 const STAFF_BLOCKED_PREFIXES=[
  '/admin','/manager','/performance','/logbook','/inventory','/safety','/maintenance','/incidents','/cash','/vendors','/procedures','/capture','/files','/menu','/ops','/tools',
@@ -33,7 +34,7 @@ export default function EmployeeRootRedirect(){
     if(!lifecycleException(pathname))window.location.replace('/employee/access');
     return;
    }
-   if(pathname==='/employee/access'||pathname==='/employee/setup'||pathname==='/'||blockedForEmployee(pathname))window.location.replace('/employee');
+   if(pathname==='/employee/access'||pathname==='/employee/setup'||pathname==='/'||blockedForEmployee(pathname)||!isStaffRouteReleased(pathname))window.location.replace('/employee');
   })();
   return()=>{mounted=false};
  },[pathname]);
