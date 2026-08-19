@@ -1,0 +1,286 @@
+name: Cloudflare Production Evidence
+
+on:
+  workflow_run:
+    workflows: ["Deploy El Molino Ops to Cloudflare"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      target_sha:
+        description: Exact current main SHA to re-verify in canonical Cloudflare production
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  statuses: write
+
+concurrency:
+  group: cloudflare-production-evidence-${{ github.event.workflow_run.head_sha || inputs.target_sha }}
+  cancel-in-progress: false
+
+jobs:
+  verify-production:
+    name: Re-verify exact production SHA and publish evidence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      PRODUCTION_WORKER: el-molino-ops
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Resolve immutable evidence subject
+        id: subject
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          WORKFLOW_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          WORKFLOW_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+          MANUAL_TARGET_SHA: ${{ inputs.target_sha }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = 'workflow_run' ]; then
+            target_sha="$WORKFLOW_HEAD_SHA"
+            test "$WORKFLOW_HEAD_BRANCH" = 'main' || { echo '::error::Canonical Cloudflare production evidence only accepts main releases'; exit 1; }
+            source_conclusion="$WORKFLOW_CONCLUSION"
+            source_run_id="$WORKFLOW_RUN_ID"
+          else
+            target_sha="$MANUAL_TARGET_SHA"
+            source_conclusion='manual-reverification'
+            source_run_id='manual'
+
+            curl -fsS \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/branches/main" > /tmp/main-branch.json
+            current_main_sha="$(node -e "const j=require('/tmp/main-branch.json');process.stdout.write(j.commit.sha)")"
+            test "$target_sha" = "$current_main_sha" || { echo "::error::Manual production evidence must target current main ($current_main_sha), not $target_sha"; exit 1; }
+          fi
+
+          test "${#target_sha}" -eq 40
+          printf '%s' "$target_sha" | grep -Eq '^[0-9a-f]{40}$'
+
+          should_probe=true
+          if [ "$EVENT_NAME" = 'workflow_run' ] && [ "$source_conclusion" != 'success' ]; then
+            should_probe=false
+          fi
+
+          {
+            echo "target_sha=$target_sha"
+            echo "source_conclusion=$source_conclusion"
+            echo "source_run_id=$source_run_id"
+            echo "should_probe=$should_probe"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Mark production evidence pending
+        if: steps.subject.outputs.should_probe == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ steps.subject.outputs.target_sha }}
+        run: |
+          set -euo pipefail
+          node - <<'NODE' > /tmp/status-pending.json
+          const runUrl=`${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+          process.stdout.write(JSON.stringify({
+            state:'pending',
+            context:'Cloudflare Production',
+            description:'Re-verifying exact canonical production release',
+            target_url:runUrl,
+          }));
+          NODE
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+            --data-binary @/tmp/status-pending.json >/dev/null
+
+      - name: Resolve canonical production workers.dev URL
+        id: production
+        if: steps.subject.outputs.should_probe == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_API_TOKEN:-}" || { echo '::error::CLOUDFLARE_API_TOKEN unavailable for production evidence'; exit 1; }
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}" || { echo '::error::CLOUDFLARE_ACCOUNT_ID unavailable for production evidence'; exit 1; }
+
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/subdomain"
+          curl -fsS \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -H 'Content-Type: application/json' \
+            "$api" > /tmp/cf-workers-subdomain.json
+
+          subdomain="$(node -e "const j=require('/tmp/cf-workers-subdomain.json');if(!j.success||!j.result?.subdomain)process.exit(2);process.stdout.write(j.result.subdomain)")"
+          production_url="https://${PRODUCTION_WORKER}.${subdomain}.workers.dev"
+          echo "production_url=$production_url" >> "$GITHUB_OUTPUT"
+
+      - name: Probe exact canonical production release
+        id: verify
+        if: steps.subject.outputs.should_probe == 'true'
+        continue-on-error: true
+        shell: bash
+        env:
+          TARGET_SHA: ${{ steps.subject.outputs.target_sha }}
+          PRODUCTION_URL: ${{ steps.production.outputs.production_url }}
+          SOURCE_CONCLUSION: ${{ steps.subject.outputs.source_conclusion }}
+          SOURCE_RUN_ID: ${{ steps.subject.outputs.source_run_id }}
+        run: |
+          set -uo pipefail
+          code=''
+          header_sha=''
+          body_sha=''
+          required_checks_ok=false
+          root_smoke_ok=false
+          identity_matched=false
+          attempts=0
+
+          for i in {1..30}; do
+            attempts="$i"
+            code="$(curl -sS -D /tmp/production-evidence.headers -o /tmp/production-evidence-health.json -w '%{http_code}' -H 'Cache-Control: no-cache, no-store, max-age=0' "$PRODUCTION_URL/api/health?release=$TARGET_SHA&evidence_attempt=$i" || true)"
+            header_sha="$(awk -F': ' 'tolower($1)=="x-el-molino-release" {gsub("\r",""); print $2}' /tmp/production-evidence.headers 2>/dev/null | tail -1)"
+            body_sha="$(node -e "try{const h=require('/tmp/production-evidence-health.json');process.stdout.write(h.release?.sha||'')}catch{}")"
+            if [ "$code" = '200' ] && [ "$body_sha" = "$TARGET_SHA" ] && [ "$header_sha" = "$TARGET_SHA" ]; then
+              identity_matched=true
+              break
+            fi
+            sleep 2
+          done
+
+          if [ "$identity_matched" = true ]; then
+            required_checks_ok="$(node -e "try{const h=require('/tmp/production-evidence-health.json');process.stdout.write(String(Boolean(h.ok&&h.checks?.filter(c=>c.required).every(c=>c.ok))))}catch{process.stdout.write('false')}")"
+            if curl -fsS -H 'Cache-Control: no-cache, no-store, max-age=0' "$PRODUCTION_URL/?release=$TARGET_SHA" | grep -q 'El Molino Ops'; then
+              root_smoke_ok=true
+            fi
+          fi
+
+          export EVIDENCE_CODE="$code" EVIDENCE_HEADER_SHA="$header_sha" EVIDENCE_BODY_SHA="$body_sha"
+          export EVIDENCE_REQUIRED_CHECKS_OK="$required_checks_ok" EVIDENCE_ROOT_SMOKE_OK="$root_smoke_ok"
+          export EVIDENCE_IDENTITY_MATCHED="$identity_matched" EVIDENCE_ATTEMPTS="$attempts"
+          node - <<'NODE'
+          const fs=require('fs');
+          const evidence={
+            target_sha:process.env.TARGET_SHA,
+            source_workflow_run_id:process.env.SOURCE_RUN_ID,
+            source_conclusion:process.env.SOURCE_CONCLUSION,
+            verifier_run_id:process.env.GITHUB_RUN_ID,
+            production_worker:process.env.PRODUCTION_WORKER,
+            production_url:process.env.PRODUCTION_URL,
+            health_status:Number(process.env.EVIDENCE_CODE||0),
+            release_body_sha:process.env.EVIDENCE_BODY_SHA||null,
+            release_header_sha:process.env.EVIDENCE_HEADER_SHA||null,
+            exact_identity_matched:process.env.EVIDENCE_IDENTITY_MATCHED==='true',
+            required_health_checks_ok:process.env.EVIDENCE_REQUIRED_CHECKS_OK==='true',
+            root_smoke_ok:process.env.EVIDENCE_ROOT_SMOKE_OK==='true',
+            attempts:Number(process.env.EVIDENCE_ATTEMPTS||0),
+            observed_at:new Date().toISOString(),
+          };
+          fs.writeFileSync('/tmp/cloudflare-production-evidence.json',JSON.stringify(evidence,null,2)+'\n');
+          NODE
+
+          test "$identity_matched" = true || { echo '::error::Canonical production did not converge to the exact target SHA'; exit 1; }
+          test "$required_checks_ok" = true || { echo '::error::Canonical production required health checks are not all green'; exit 1; }
+          test "$root_smoke_ok" = true || { echo '::error::Canonical production root smoke failed'; exit 1; }
+
+      - name: Record failed publisher evidence
+        if: steps.subject.outputs.should_probe != 'true'
+        shell: bash
+        env:
+          TARGET_SHA: ${{ steps.subject.outputs.target_sha }}
+          SOURCE_CONCLUSION: ${{ steps.subject.outputs.source_conclusion }}
+          SOURCE_RUN_ID: ${{ steps.subject.outputs.source_run_id }}
+        run: |
+          node - <<'NODE'
+          const fs=require('fs');
+          fs.writeFileSync('/tmp/cloudflare-production-evidence.json',JSON.stringify({
+            target_sha:process.env.TARGET_SHA,
+            source_workflow_run_id:process.env.SOURCE_RUN_ID,
+            source_conclusion:process.env.SOURCE_CONCLUSION,
+            verifier_run_id:process.env.GITHUB_RUN_ID,
+            production_worker:process.env.PRODUCTION_WORKER,
+            exact_identity_matched:false,
+            required_health_checks_ok:false,
+            root_smoke_ok:false,
+            observed_at:new Date().toISOString(),
+            failure_reason:'canonical production publisher did not complete successfully',
+          },null,2)+'\n');
+          NODE
+
+      - name: Upload sanitized exact-SHA production evidence
+        if: always() && steps.subject.outputs.target_sha != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudflare-production-evidence-${{ steps.subject.outputs.target_sha }}
+          path: /tmp/cloudflare-production-evidence.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Publish stable Cloudflare Production commit status
+        if: always() && steps.subject.outputs.target_sha != ''
+        id: status
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ steps.subject.outputs.target_sha }}
+          SHOULD_PROBE: ${{ steps.subject.outputs.should_probe }}
+          VERIFY_OUTCOME: ${{ steps.verify.outcome }}
+        run: |
+          set -euo pipefail
+          state='failure'
+          description='Canonical Cloudflare production verification failed'
+          if [ "$SHOULD_PROBE" = 'true' ] && [ "$VERIFY_OUTCOME" = 'success' ]; then
+            state='success'
+            description='Exact canonical Cloudflare production release verified'
+          fi
+          export STATUS_STATE="$state" STATUS_DESCRIPTION="$description"
+          node - <<'NODE' > /tmp/status-final.json
+          const runUrl=`${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+          process.stdout.write(JSON.stringify({
+            state:process.env.STATUS_STATE,
+            context:'Cloudflare Production',
+            description:process.env.STATUS_DESCRIPTION,
+            target_url:runUrl,
+          }));
+          NODE
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+            --data-binary @/tmp/status-final.json >/dev/null
+          echo "state=$state" >> "$GITHUB_OUTPUT"
+
+      - name: Publish production evidence summary
+        if: always() && steps.subject.outputs.target_sha != ''
+        shell: bash
+        env:
+          TARGET_SHA: ${{ steps.subject.outputs.target_sha }}
+          STATUS_STATE: ${{ steps.status.outputs.state }}
+        run: |
+          {
+            echo '## Cloudflare Production evidence'
+            echo
+            echo "- Exact SHA: \`${TARGET_SHA}\`"
+            echo "- Stable commit status: \`Cloudflare Production\` = \`${STATUS_STATE}\`"
+            echo "- Sanitized evidence artifact: \`cloudflare-production-evidence-${TARGET_SHA}\`"
+            if [ -f /tmp/cloudflare-production-evidence.json ]; then
+              echo
+              echo '```json'
+              cat /tmp/cloudflare-production-evidence.json
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail closed when production evidence is not successful
+        if: always()
+        shell: bash
+        env:
+          STATUS_STATE: ${{ steps.status.outputs.state }}
+        run: |
+          test "$STATUS_STATE" = 'success' || { echo '::error::Cloudflare Production evidence gate failed'; exit 1; }
