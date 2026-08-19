@@ -34,8 +34,8 @@ export function staffFeatureEnabled(feature: StaffFeature): boolean {
 
 type RouteReleaseRule = {prefix: string; feature: StaffFeature};
 
-// Most-specific employee routes first. Routes not listed here remain governed by
-// normal authentication/authorization; this table controls product release only.
+// Most-specific employee routes first. Unknown /employee routes fail closed so a
+// future module cannot become Staff-visible merely because a route was added.
 const STAFF_ROUTE_RELEASE_RULES: readonly RouteReleaseRule[] = [
   {prefix: '/employee/notifications/preferences', feature: 'notificationPreferences'},
   {prefix: '/employee/notifications', feature: 'notifications'},
@@ -47,21 +47,42 @@ const STAFF_ROUTE_RELEASE_RULES: readonly RouteReleaseRule[] = [
   {prefix: '/employee/team', feature: 'communications'},
   {prefix: '/employee/more', feature: 'account'},
   {prefix: '/employee/tips', feature: 'tips'},
-  {prefix: '/employee', feature: 'home'},
 ];
+
+const STAFF_LIFECYCLE_PREFIXES = ['/employee/setup', '/employee/access'] as const;
+const STAFF_SHARED_ALLOWED_PREFIXES = ['/account', '/delete-account'] as const;
+
+function normalizedPath(pathname: string): string {
+  return (pathname || '/').split(/[?#]/, 1)[0] || '/';
+}
 
 function routeMatches(pathname: string, prefix: string): boolean {
   return pathname === prefix || pathname.startsWith(`${prefix}/`);
 }
 
+function matchesAny(pathname: string, prefixes: readonly string[]): boolean {
+  return prefixes.some((prefix) => routeMatches(pathname, prefix));
+}
+
 export function staffRouteFeature(pathname: string): StaffFeature | null {
-  const normalized = (pathname || '/').split(/[?#]/, 1)[0] || '/';
+  const normalized = normalizedPath(pathname);
+  if (normalized === '/employee') return 'home';
   return STAFF_ROUTE_RELEASE_RULES.find((rule) => routeMatches(normalized, rule.prefix))?.feature ?? null;
 }
 
 export function isStaffRouteReleased(pathname: string): boolean {
-  const feature = staffRouteFeature(pathname);
-  return feature ? staffFeatureEnabled(feature) : true;
+  const normalized = normalizedPath(pathname);
+  if (matchesAny(normalized, STAFF_LIFECYCLE_PREFIXES)) return true;
+  const feature = staffRouteFeature(normalized);
+  if (feature) return staffFeatureEnabled(feature);
+  return !routeMatches(normalized, '/employee');
+}
+
+export function isStaffProductPathAllowed(pathname: string): boolean {
+  const normalized = normalizedPath(pathname);
+  if (normalized === '/') return true;
+  if (routeMatches(normalized, '/employee')) return isStaffRouteReleased(normalized);
+  return matchesAny(normalized, STAFF_SHARED_ALLOWED_PREFIXES);
 }
 
 type StaffNotificationLike = {
@@ -85,7 +106,7 @@ function normalizedNotificationTokens(value: StaffNotificationLike): string[] {
 }
 
 export function isStaffNotificationReleased(value: StaffNotificationLike): boolean {
-  if (value.href && !isStaffRouteReleased(value.href)) return false;
+  if (value.href && !isStaffProductPathAllowed(value.href)) return false;
   const tokens = normalizedNotificationTokens(value);
   for (const [feature, prefixes] of Object.entries(FEATURE_NOTIFICATION_PREFIXES) as Array<[
     keyof typeof FEATURE_NOTIFICATION_PREFIXES,
