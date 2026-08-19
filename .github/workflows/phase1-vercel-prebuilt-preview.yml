@@ -7,10 +7,11 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 concurrency:
   group: phase1-vercel-prebuilt-preview
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   deploy-preview:
@@ -26,6 +27,7 @@ jobs:
       VERCEL_CLI_VERSION: 58.4.4
     steps:
       - name: Validate deployment credential presence
+        id: credential
         shell: bash
         run: |
           set -euo pipefail
@@ -35,12 +37,14 @@ jobs:
           fi
 
       - name: Checkout immutable PR 120 head
+        id: checkout
         uses: actions/checkout@v4
         with:
           ref: ${{ env.TARGET_SHA }}
           fetch-depth: 1
 
       - name: Prove immutable source identity
+        id: source
         shell: bash
         run: |
           set -euo pipefail
@@ -49,13 +53,16 @@ jobs:
           test -z "$(git status --porcelain)" || { echo '::error::Exact-head checkout is not clean'; git status --short; exit 1; }
           echo "source_sha=$ACTUAL_SHA" >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/setup-node@v4
+      - name: Configure Node
+        id: node
+        uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: npm
           cache-dependency-path: package-lock.json
 
       - name: Install pinned Vercel CLI
+        id: cli
         shell: bash
         run: |
           set -euo pipefail
@@ -64,6 +71,7 @@ jobs:
           echo "vercel_cli=$ACTUAL_VERSION" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Pull legitimate Vercel Preview project configuration
+        id: pull
         shell: bash
         run: |
           set -euo pipefail
@@ -77,6 +85,7 @@ jobs:
           NODE
 
       - name: Build exact-head Vercel artifact outside Vercel cloud build quota
+        id: build
         shell: bash
         run: |
           set -euo pipefail
@@ -102,9 +111,44 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Preserve deployment evidence pointer
+        id: artifact
+        if: ${{ steps.deploy.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
           name: phase1-vercel-prebuilt-preview
           path: phase1-vercel-preview-url.txt
           retention-days: 14
           if-no-files-found: error
+
+      - name: Publish sanitized runner evidence
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
+          CREDENTIAL: ${{ steps.credential.outcome }}
+          CHECKOUT: ${{ steps.checkout.outcome }}
+          SOURCE: ${{ steps.source.outcome }}
+          CLI: ${{ steps.cli.outcome }}
+          PULL: ${{ steps.pull.outcome }}
+          BUILD: ${{ steps.build.outcome }}
+          DEPLOY: ${{ steps.deploy.outcome }}
+          PREVIEW_URL: ${{ steps.deploy.outputs.preview_url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          BODY="target_sha=$TARGET_SHA
+runner_commit=$GITHUB_SHA
+job_status=$JOB_STATUS
+credential=$CREDENTIAL
+checkout=$CHECKOUT
+source_identity=$SOURCE
+vercel_cli=$CLI
+preview_config_pull=$PULL
+prebuilt_build=$BUILD
+prebuilt_deploy=$DEPLOY
+preview_url=${PREVIEW_URL:-none}
+No credentials or environment values are included in this evidence record."
+          gh issue create \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Phase 1 Vercel prebuilt runner evidence ${TARGET_SHA:0:12}" \
+            --body "$BODY"
