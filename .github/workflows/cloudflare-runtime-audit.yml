@@ -54,7 +54,10 @@ jobs:
           npm ci --no-audit --no-fund
           npx tsc --noEmit
           EL_MOLINO_RELEASE_SHA="$TARGET_SHA" RELEASE_SHA="$TARGET_SHA" npm run cf:build
-          grep -R -F -q "$TARGET_SHA" .open-next/worker.js
+          if ! grep -R -F -q --exclude='*.map' "$TARGET_SHA" .open-next/server-functions .open-next/middleware 2>/dev/null; then
+            echo "::error::Built OpenNext artifact does not contain expected release SHA: $TARGET_SHA"
+            exit 1
+          fi
           npx wrangler deploy --name "$STAGING_WORKER" --dry-run --outdir /tmp/cf-audit-bundle 2>&1 | tee /tmp/cf-dry-run.log
           python3 - <<'PY'
           import re
