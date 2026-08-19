@@ -15,7 +15,7 @@ jobs:
   staging-proof:
     if: github.event.pull_request.head.ref == 'infra/cloudflare-runtime-audit'
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 40
     env:
       TARGET_SHA: e03ed65b5af4174c8430df9c9e761c21d9bac705
       STAGING_WORKER: el-molino-ops-phase1-staging
@@ -69,6 +69,12 @@ jobs:
           print('compressed_worker_bytes='+str(b))
           if b>10*1024*1024: raise SystemExit('Worker exceeds Workers Paid 10 MiB limit')
           PY
+      - name: Record pre-audit staging deployment state
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deployments status --name "$STAGING_WORKER" --json > /tmp/cf-status-before.json || true
+          cat /tmp/cf-status-before.json || true
       - name: Deploy exact SHA to disposable Cloudflare staging Worker
         shell: bash
         run: |
@@ -78,18 +84,19 @@ jobs:
           URL="https://${STAGING_WORKER}.${SUBDOMAIN}.workers.dev"
           echo "$URL" > /tmp/cf-staging-url
           printf 'staging_url=%s\n' "$URL" >> "$GITHUB_STEP_SUMMARY"
-      - name: Verify deployed health and exact release identity
+      - name: Verify deployed health and exact release identity with one GET
         shell: bash
         run: |
           set -euo pipefail
           URL="$(cat /tmp/cf-staging-url)"
+          CODE=""
           for i in {1..60}; do
-            CODE="$(curl -sS -o /tmp/health.json -w '%{http_code}' "$URL/api/health?release=$TARGET_SHA" || true)"
+            CODE="$(curl -sS -D /tmp/health.headers -o /tmp/health.json -w '%{http_code}' "$URL/api/health?release=$TARGET_SHA" || true)"
             if [ "$CODE" = 200 ]; then break; fi
             sleep 2
           done
-          test "$CODE" = 200 || { cat /tmp/health.json || true; exit 1; }
-          HEADER_SHA="$(curl -sSI "$URL/api/health?release=$TARGET_SHA" | awk -F': ' 'tolower($1)=="x-el-molino-release" {gsub("\r",""); print $2}' | tail -1)"
+          test "$CODE" = 200 || { cat /tmp/health.headers || true; cat /tmp/health.json || true; exit 1; }
+          HEADER_SHA="$(awk -F': ' 'tolower($1)=="x-el-molino-release" {gsub("\r",""); print $2}' /tmp/health.headers | tail -1)"
           node - <<'NODE'
           const fs=require('fs'); const h=JSON.parse(fs.readFileSync('/tmp/health.json','utf8')); const expected=process.env.TARGET_SHA;
           if(!h.ok) throw new Error('health not ok');
@@ -97,6 +104,7 @@ jobs:
           if(!h.checks?.filter(c=>c.required).every(c=>c.ok)) throw new Error('required health check failed');
           NODE
           test "$HEADER_SHA" = "$TARGET_SHA"
+          printf 'health_get_status=%s\nhealth_body_sha=%s\nhealth_header_sha=%s\n' "$CODE" "$TARGET_SHA" "$HEADER_SHA" >> "$GITHUB_STEP_SUMMARY"
       - name: Capture runtime invocation/error evidence
         shell: bash
         run: |
@@ -122,17 +130,61 @@ jobs:
             if exc: bad.append(('exceptions',exc))
           print('tail_events='+str(seen))
           print('runtime_failures='+str(len(bad)))
+          if seen < 1: raise SystemExit('no runtime tail events captured')
           if bad: print(bad[:10]); raise SystemExit(1)
           PY
-      - name: Record deployment/version identity
+      - name: Record deployed version identity
         shell: bash
         run: |
           set -euo pipefail
-          npx wrangler deployments status --name "$STAGING_WORKER" 2>&1 | tee /tmp/cf-status.log
+          npx wrangler deployments status --name "$STAGING_WORKER" --json > /tmp/cf-status-deployed.json
+          cat /tmp/cf-status-deployed.json
+      - name: Exercise staging rollback and restore exact SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="$(cat /tmp/cf-staging-url)"
+
+          npx wrangler rollback --name "$STAGING_WORKER" --message "El Molino Cloudflare audit rollback exercise" 2>&1 | tee /tmp/cf-rollback.log
+
+          ROLLBACK_CODE=""
+          for i in {1..60}; do
+            ROLLBACK_CODE="$(curl -sS -D /tmp/rollback-health.headers -o /tmp/rollback-health.json -w '%{http_code}' "$URL/api/health?audit=rollback" || true)"
+            if [ "$ROLLBACK_CODE" = 200 ]; then break; fi
+            sleep 2
+          done
+          test "$ROLLBACK_CODE" = 200 || { cat /tmp/rollback-health.headers || true; cat /tmp/rollback-health.json || true; exit 1; }
+          ROLLBACK_HEADER_SHA="$(awk -F': ' 'tolower($1)=="x-el-molino-release" {gsub("\r",""); print $2}' /tmp/rollback-health.headers | tail -1)"
+          printf 'rollback_http_status=%s\nrollback_release_header=%s\n' "$ROLLBACK_CODE" "$ROLLBACK_HEADER_SHA" >> "$GITHUB_STEP_SUMMARY"
+
+          EL_MOLINO_RELEASE_SHA="$TARGET_SHA" RELEASE_SHA="$TARGET_SHA" npx wrangler deploy --name "$STAGING_WORKER" --keep-vars 2>&1 | tee /tmp/cf-restore.log
+
+          RESTORE_CODE=""
+          for i in {1..60}; do
+            RESTORE_CODE="$(curl -sS -D /tmp/restore-health.headers -o /tmp/restore-health.json -w '%{http_code}' "$URL/api/health?release=$TARGET_SHA&audit=restore" || true)"
+            if [ "$RESTORE_CODE" = 200 ]; then break; fi
+            sleep 2
+          done
+          test "$RESTORE_CODE" = 200 || { cat /tmp/restore-health.headers || true; cat /tmp/restore-health.json || true; exit 1; }
+          RESTORE_HEADER_SHA="$(awk -F': ' 'tolower($1)=="x-el-molino-release" {gsub("\r",""); print $2}' /tmp/restore-health.headers | tail -1)"
+          node - <<'NODE'
+          const fs=require('fs'); const h=JSON.parse(fs.readFileSync('/tmp/restore-health.json','utf8')); const expected=process.env.TARGET_SHA;
+          if(!h.ok) throw new Error('restored health not ok');
+          if(h.release?.sha!==expected) throw new Error(`restored release SHA mismatch ${h.release?.sha}`);
+          if(!h.checks?.filter(c=>c.required).every(c=>c.ok)) throw new Error('restored required health check failed');
+          NODE
+          test "$RESTORE_HEADER_SHA" = "$TARGET_SHA"
+          printf 'restore_http_status=%s\nrestore_header_sha=%s\n' "$RESTORE_CODE" "$RESTORE_HEADER_SHA" >> "$GITHUB_STEP_SUMMARY"
+      - name: Record final deployment/version identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deployments status --name "$STAGING_WORKER" --json 2>&1 | tee /tmp/cf-status-final.json
           {
             echo "target_sha=$TARGET_SHA"
             echo "staging_worker=$STAGING_WORKER"
             echo "staging_url=$(cat /tmp/cf-staging-url)"
             echo "compressed_worker_bytes=$(cat /tmp/cf-compressed-bytes)"
             echo 'data_scope=production Supabase public configuration; only non-mutating health/root probes executed'
+            echo 'rollback_scope=disposable staging Worker only; exact target SHA redeployed and reverified afterward'
           } >> "$GITHUB_STEP_SUMMARY"
