@@ -39,6 +39,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en" suppressHydrationWarning>
       <body>
+        <a className="skip-link" href="#app-primary-content">Skip to main content / Saltar al contenido principal</a>
         <I18nProvider>
           <PWARegister />
           <ErrorSanitizer />
@@ -51,7 +52,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
               <NativeRuntime />
               <GlobalActions />
               <AskAgentBridge />
-              {children}
+              <div id="app-primary-content" tabIndex={-1}>{children}</div>
             </EmployeeRootRedirect>
           </MfaGate>
         </I18nProvider>
