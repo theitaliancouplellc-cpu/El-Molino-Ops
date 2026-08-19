@@ -6,6 +6,8 @@ import {STAFF_FEATURES,isStaffNotificationReleased,isStaffRouteReleased,staffRou
 const boundary=readFileSync('app/employee/staff-release-boundary.tsx','utf8');
 const layout=readFileSync('app/employee/layout.tsx','utf8');
 const more=readFileSync('app/employee/more/page.tsx','utf8');
+const notificationCenter=readFileSync('app/employee/notifications/page.tsx','utf8');
+const notificationPreferences=readFileSync('app/employee/notifications/preferences/page.tsx','utf8');
 
 test('staff feature release source hides unreleased operational domains',()=>{
   assert.equal(STAFF_FEATURES.training,false);
@@ -46,6 +48,8 @@ test('hidden-domain notifications do not leak through Staff Home notification su
   assert.equal(isStaffNotificationReleased({href:null,event_key:'payroll.finalized'}),false);
   assert.equal(isStaffNotificationReleased({href:'/employee/schedule',category:'schedule'}),true);
   assert.equal(isStaffNotificationReleased({href:'/employee/team',event_key:'announcement.created'}),true);
+  assert.match(notificationCenter,/filter\(isStaffNotificationReleased\)/);
+  assert.match(notificationPreferences,/isStaffNotificationReleased\(\{category:p\.category\}\)/);
 });
 
 test('More remains small and contains only currently implemented staff destinations',()=>{
