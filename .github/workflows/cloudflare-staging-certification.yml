@@ -122,7 +122,7 @@ jobs:
           largest_asset_path="${largest_asset#*$'\t'}"
           test "$largest_asset_bytes" -le 26214400 || { echo "::error::Static asset exceeds 25 MiB: $largest_asset_path"; exit 1; }
 
-          npx wrangler deploy --name "$STAGING_WORKER" --dry-run --outdir /tmp/cf-cert-bundle 2>&1 | tee /tmp/cf-dry-run.log
+          npx wrangler deploy --env certification --name "$STAGING_WORKER" --dry-run --outdir /tmp/cf-cert-bundle 2>&1 | tee /tmp/cf-dry-run.log
           python3 - <<'PY'
           import re
           s=open('/tmp/cf-dry-run.log').read()
@@ -142,7 +142,7 @@ jobs:
         run: |
           set -euo pipefail
           EL_MOLINO_RELEASE_SHA="$TARGET_SHA" RELEASE_SHA="$TARGET_SHA" \
-            npx wrangler deploy --name "$STAGING_WORKER" --keep-vars 2>&1 | tee /tmp/cf-deploy.log
+            npx wrangler deploy --env certification --name "$STAGING_WORKER" --keep-vars 2>&1 | tee /tmp/cf-deploy.log
           SUBDOMAIN="$(cat /tmp/cf-subdomain)"
           URL="https://${STAGING_WORKER}.${SUBDOMAIN}.workers.dev"
           printf '%s' "$URL" > /tmp/cf-staging-url
