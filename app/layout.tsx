@@ -3,6 +3,7 @@ import './globals.css';
 import './extra.css';
 import './command.css';
 import './brand.css';
+import './accessibility.css';
 import PWARegister from './pwa-register';
 import GlobalActions from './global-actions';
 import ErrorSanitizer from './error-sanitizer';
