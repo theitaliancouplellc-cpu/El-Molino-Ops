@@ -130,10 +130,10 @@ jobs:
           : > /tmp/cf-tail.jsonl
           : > /tmp/cf-tail.err
 
-          # Cloudflare documents wrangler tail as the CLI for real-time Worker invocation,
-          # console, error and exception logs. Explicit 100% sampling and GET filtering make
-          # this certification probe deterministic while keeping traffic narrow.
-          npx wrangler tail "$STAGING_WORKER" --format json --sampling-rate 1 --method GET > /tmp/cf-tail.jsonl 2>/tmp/cf-tail.err &
+          # Use Cloudflare's real-time Worker tail with GET filtering. Do not pass an
+          # explicit sampling rate here: Wrangler 4.123.0 rejects a value of 1, and the
+          # repeated uniquely tagged GETs below give the audit multiple capture chances.
+          npx wrangler tail "$STAGING_WORKER" --format json --method GET > /tmp/cf-tail.jsonl 2>/tmp/cf-tail.err &
           TAIL_PID=$!
 
           cleanup_tail() {
