@@ -14,6 +14,7 @@ import ProductionTelemetry from './production-telemetry';
 import SessionResilience from './session-resilience';
 import NativeRuntime from './native-runtime';
 import MfaGate from './mfa-gate';
+import RootAccessibility from './root-accessibility';
 import {I18nProvider,LanguageToggle} from '@/lib/i18n';
 
 export const metadata: Metadata = {
@@ -45,6 +46,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           <PWARegister />
           <ErrorSanitizer />
           <ProductionTelemetry />
+          <RootAccessibility />
           <div className="global-language-control"><LanguageToggle compact/></div>
           <MfaGate>
             <EmployeeRootRedirect>
