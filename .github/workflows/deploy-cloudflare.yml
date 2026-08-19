@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: cloudflare-release-control-plane
+  group: cloudflare-production-release
   cancel-in-progress: false
 
 jobs:
@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 45
     env:
       PRODUCTION_WORKER: el-molino-ops
-      STAGING_WORKER: el-molino-ops-certification
+      STAGING_WORKER: el-molino-ops-release-gate
       NEXT_PUBLIC_SUPABASE_URL: https://asuvgjxdmxizbnjrccsz.supabase.co
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_gtR8VfsQ5n-FPPbypnYKTw_f2k3Xyrk
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -78,7 +78,7 @@ jobs:
           largest_asset_path="${largest_asset#*$'\t'}"
           test "$largest_asset_bytes" -le 26214400 || { echo "::error::Static asset exceeds 25 MiB: $largest_asset_path"; exit 1; }
 
-          npx wrangler deploy --env certification --name "$STAGING_WORKER" --dry-run --outdir /tmp/cloudflare-release-dry-run 2>&1 | tee /tmp/cloudflare-release-dry-run.log
+          npx wrangler deploy --env release_gate --name "$STAGING_WORKER" --dry-run --outdir /tmp/cloudflare-release-dry-run 2>&1 | tee /tmp/cloudflare-release-dry-run.log
           python3 - <<'PY'
           import re
           s=open('/tmp/cloudflare-release-dry-run.log').read()
@@ -127,11 +127,11 @@ jobs:
           fs.writeFileSync('/tmp/cf-subdomain',j.result.subdomain);
           NODE
 
-      - name: Deploy exact main SHA to certification Worker
+      - name: Deploy exact main SHA to release-gate Worker
         shell: bash
         run: |
           set -euo pipefail
-          EL_MOLINO_RELEASE_SHA="$TARGET_SHA" RELEASE_SHA="$TARGET_SHA" npx wrangler deploy --env certification --name "$STAGING_WORKER" --keep-vars 2>&1 | tee /tmp/cf-staging-deploy.log
+          EL_MOLINO_RELEASE_SHA="$TARGET_SHA" RELEASE_SHA="$TARGET_SHA" npx wrangler deploy --env release_gate --name "$STAGING_WORKER" --keep-vars 2>&1 | tee /tmp/cf-staging-deploy.log
           SUBDOMAIN="$(cat /tmp/cf-subdomain)"
           printf 'https://%s.%s.workers.dev' "$STAGING_WORKER" "$SUBDOMAIN" > /tmp/cf-staging-url
 
@@ -262,14 +262,14 @@ jobs:
             echo '## Canonical Cloudflare release — PASS'
             echo
             echo "- Exact main SHA: \`${TARGET_SHA}\`"
-            echo "- Certification Worker: \`${STAGING_WORKER}\`"
-            echo "- Certification URL: $(cat /tmp/cf-staging-url)"
+            echo "- Release-gate Worker: \`${STAGING_WORKER}\`"
+            echo "- Release-gate URL: $(cat /tmp/cf-staging-url)"
             echo "- Production Worker: \`${PRODUCTION_WORKER}\`"
             echo "- Production URL: $(cat /tmp/cf-production-url)"
             echo "- Worker compressed bytes: $(cat /tmp/cf-compressed-bytes)"
             echo "- Largest asset: \`$(cat /tmp/cf-largest-asset-path)\` ($(cat /tmp/cf-largest-asset-bytes) bytes)"
             echo '- Exact-main build and regression suite: PASS'
-            echo '- Exact-main staging health/root/runtime-tail: PASS'
+            echo '- Exact-main release-gate health/root/runtime-tail: PASS'
             echo '- Production publish: PASS'
             echo '- Exact production release identity and required health: PASS'
           } >> "$GITHUB_STEP_SUMMARY"
