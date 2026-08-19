@@ -4,6 +4,8 @@ import {readFileSync} from 'node:fs';
 import {STAFF_FEATURES,isStaffNotificationReleased,isStaffProductPathAllowed,isStaffRouteReleased,staffRouteFeature} from '../lib/staff-features';
 
 const boundary=readFileSync('app/employee/staff-release-boundary.tsx','utf8');
+const employeeRootGate=readFileSync('app/employee-root-redirect.tsx','utf8');
+const rootLayout=readFileSync('app/layout.tsx','utf8');
 const layout=readFileSync('app/employee/layout.tsx','utf8');
 const staffNav=readFileSync('app/employee/staff-bottom-nav.tsx','utf8');
 const mobilePolish=readFileSync('app/employee/mobile-polish.css','utf8');
@@ -38,11 +40,20 @@ test('staff route release gate fails closed for hidden and unknown employee rout
 });
 
 test('staff global product path allowlist rejects every legacy or management surface by default',()=>{
-  for(const route of ['/employee','/employee/schedule','/employee/requests','/employee/team','/employee/notifications','/employee/more','/account','/delete-account'])assert.equal(isStaffProductPathAllowed(route),true,route);
+  for(const route of ['/employee','/employee/schedule','/employee/requests','/employee/team','/employee/notifications','/employee/more','/account','/delete-account','/privacy','/support'])assert.equal(isStaffProductPathAllowed(route),true,route);
   for(const route of ['/team','/discussions','/training','/time-clock','/tips','/schedule','/schedule/pool','/admin','/manager','/tools','/ops','/inventory','/calendar','/tasks','/shift','/saved','/ai-runtime-test','/employee/training','/employee/future-module'])assert.equal(isStaffProductPathAllowed(route),false,route);
 });
 
-test('employee layout fails closed visually before an unreleased route can render',()=>{
+test('root employee gate blocks page rendering until role, lifecycle and release access resolve',()=>{
+  assert.match(rootLayout,/<EmployeeRootRedirect>[\s\S]*\{children\}[\s\S]*<\/EmployeeRootRedirect>/);
+  assert.match(employeeRootGate,/type GateMode='checking'\|'pass'\|'redirecting'\|'error'/);
+  assert.match(employeeRootGate,/isStaffProductPathAllowed/);
+  assert.match(employeeRootGate,/if\(mode==='pass'\)return <>\{children\}<\/>/);
+  assert.match(employeeRootGate,/setMode\('redirecting'\);window\.location\.replace\(target\)/);
+  assert.match(employeeRootGate,/No restricted screen was opened/);
+});
+
+test('employee layout fails closed visually before an unreleased employee route can render',()=>{
   assert.match(layout,/StaffReleaseBoundary/);
   assert.match(boundary,/isStaffRouteReleased/);
   assert.match(boundary,/if\(!released\)return null/);
