@@ -26,11 +26,13 @@ The portable JSON contract intentionally excludes credential/configuration or ep
 
 The production database functions independently enforce administrator/location/session ownership and restore-session state. The final apply path is server-controlled and transactional. The UI is not treated as the authorization boundary.
 
-A production restore is a deliberate incident action. It is never executed by the scheduled recovery rehearsal.
+A production restore is a deliberate incident action. It is never executed by the automated recovery rehearsal.
 
 ## Automated recovery rehearsal
 
-`.github/workflows/recovery-rehearsal.yml` runs weekly and can also be dispatched manually. It has only `contents: read`, checks out the exact workflow SHA without persisted credentials, installs locked dependencies, executes the backup/recovery regression contracts, then runs `scripts/recovery-rehearsal.ts`.
+`.github/workflows/recovery-rehearsal.yml` runs on every `main` push, weekly, and by manual dispatch. Running on `main` makes each released recovery-contract change produce immediate evidence; the weekly schedule continues to detect later drift even when no release occurred.
+
+The workflow has only `contents: read`, checks out the exact workflow SHA without persisted credentials, installs locked dependencies, executes the backup/recovery regression contracts, then runs `scripts/recovery-rehearsal.ts`.
 
 The rehearsal creates synthetic data only. It exercises the real portable validation code and requires all of these cases to behave correctly:
 
