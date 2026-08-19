@@ -29,7 +29,7 @@ test('staff feature release source hides unreleased operational domains',()=>{
 });
 
 test('staff route release gate fails closed for hidden and unknown employee routes',()=>{
-  for(const route of ['/employee/training','/employee/training/assignment/123','/employee/time-clock','/employee/time-clock/history','/employee/tips','/employee/future-module']){
+  for(const route of ['/employee/training','/employee/training/assignment/123','/employee/time-clock','/employee/time-clock/history','/employee/tips','/employee/future-module','/employee/setup/internal','/employee/access/admin']){
     assert.equal(isStaffRouteReleased(route),false,route);
   }
   for(const route of ['/employee','/employee/setup','/employee/access','/employee/schedule','/employee/requests','/employee/shift-pool','/employee/team','/employee/notifications','/employee/more']){
@@ -39,11 +39,13 @@ test('staff route release gate fails closed for hidden and unknown employee rout
   assert.equal(staffRouteFeature('/employee/time-clock'),'timeClock');
   assert.equal(staffRouteFeature('/employee/tips'),'tips');
   assert.equal(staffRouteFeature('/employee/future-module'),null);
+  assert.equal(staffRouteFeature('/employee/setup/internal'),null);
+  assert.equal(staffRouteFeature('/employee/access/admin'),null);
 });
 
 test('staff global product path allowlist rejects every legacy or management surface by default',()=>{
   for(const route of ['/employee','/employee/schedule','/employee/requests','/employee/team','/employee/notifications','/employee/more','/account','/delete-account','/privacy','/support'])assert.equal(isStaffProductPathAllowed(route),true,route);
-  for(const route of ['/team','/discussions','/training','/time-clock','/tips','/schedule','/schedule/pool','/admin','/manager','/tools','/ops','/inventory','/calendar','/tasks','/shift','/saved','/ai-runtime-test','/employee/training','/employee/future-module','/support/admin','/privacy/internal','/account/admin','/delete-account/admin'])assert.equal(isStaffProductPathAllowed(route),false,route);
+  for(const route of ['/team','/discussions','/training','/time-clock','/tips','/schedule','/schedule/pool','/admin','/manager','/tools','/ops','/inventory','/calendar','/tasks','/shift','/saved','/ai-runtime-test','/employee/training','/employee/future-module','/employee/setup/internal','/employee/access/admin','/support/admin','/privacy/internal','/account/admin','/delete-account/admin'])assert.equal(isStaffProductPathAllowed(route),false,route);
 });
 
 test('root employee gate uses exact public and lifecycle exceptions so future nested routes fail closed',()=>{
