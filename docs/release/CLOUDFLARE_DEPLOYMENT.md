@@ -47,6 +47,26 @@ A production release is permitted only from `main`. For the exact `github.sha` i
 
 A successful build without an authenticated publish is not a successful release. A successful staging deploy does not permit production if any exact-SHA or runtime gate fails.
 
+## Durable production evidence
+
+`.github/workflows/cloudflare-production-evidence.yml` is an observational verifier downstream of the canonical production publisher. It is not permitted to deploy or mutate a Worker.
+
+When the canonical `Deploy El Molino Ops to Cloudflare` workflow completes, the evidence workflow binds to that workflow run's immutable `head_sha` and requires its `head_branch` to be `main`. A failed canonical publisher is recorded as a failed production status and cannot be promoted to success by the downstream workflow-run path.
+
+For a successful canonical publisher, the evidence workflow independently re-probes the public production Worker and requires all of the following for the exact SHA:
+
+- HTTP 200 from `/api/health`;
+- response `release.sha` equal to the target SHA;
+- `x-el-molino-release` header equal to the target SHA;
+- every required health check green;
+- root application runtime smoke success.
+
+The result is written back to the exact commit under the stable GitHub commit-status context `Cloudflare Production`. The workflow also uploads a sanitized artifact named `cloudflare-production-evidence-<sha>` containing the observed release identity and health result without Cloudflare credentials or account secrets. If verifier infrastructure fails after a valid release subject is established, the workflow still creates sanitized failure evidence and fails closed.
+
+Manual re-verification is allowed only for the exact current `main` SHA. It is a verification path, not a publication path, and cannot be used to certify an arbitrary historical or non-main commit.
+
+This durable evidence surface exists so later audits can distinguish “the code merged” from “the exact merged SHA was observed healthy in canonical production” without relying on Cloudflare dashboard access or a transient Actions screen.
+
 ## Credentials
 
 Required GitHub Actions repository secrets:
@@ -59,6 +79,8 @@ The API token must be scoped to the Cloudflare account with only the permissions
 ## Serialization
 
 Pull-request certification and production release share the `cloudflare-release-control-plane` concurrency group with `cancel-in-progress: false`. This prevents two workflows from racing the shared certification Worker or a production release.
+
+The downstream production-evidence verifier has a separate per-SHA concurrency key because it never publishes a Worker. It may observe the finished canonical release, but it cannot race the publisher as a second writer.
 
 ## Rollback
 
