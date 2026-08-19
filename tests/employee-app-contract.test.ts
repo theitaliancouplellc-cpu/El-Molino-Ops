@@ -13,12 +13,11 @@ const commands=readFileSync('app/global-actions.tsx','utf8');
 const account=readFileSync('app/account/page.tsx','utf8');
 const backup=readFileSync('lib/backup-manifest.ts','utf8');
 
-test('employee accounts enter a dedicated released staff-only app',()=>{
+test('employee accounts enter a dedicated deny-by-default released staff app',()=>{
   assert.match(routeGuard,/app_role.*employee/);
   assert.match(routeGuard,/location\.replace\('\/employee'\)/);
-  assert.match(routeGuard,/STAFF_BLOCKED_EXACT=new Set\(\['\/schedule','\/time-clock','\/tips'\]\)/);
-  assert.match(routeGuard,/isStaffRouteReleased/);
-  for(const prefix of ['/admin','/manager','/performance','/logbook','/inventory','/safety','/maintenance','/incidents','/cash','/vendors','/procedures','/capture','/files','/menu','/ops','/tools'])assert.match(routeGuard,new RegExp(`['"]${prefix.replaceAll('/','\\/')}['"]`),`staff guard must block ${prefix}`);
+  assert.match(routeGuard,/isStaffProductPathAllowed/);
+  assert.doesNotMatch(routeGuard,/STAFF_BLOCKED_PREFIXES|STAFF_BLOCKED_EXACT/);
   for(const href of ['/employee/notifications','/employee/schedule','/employee/shift-pool','/employee/requests','/employee/team','/employee/more','/account'])assert.match(home,new RegExp(href.replaceAll('/','\\/')));
   for(const managementLabel of ['Manager Dashboard','Admin Center','Cash Controls','Inventory & Food Cost','Restaurant command center'])assert.doesNotMatch(home,new RegExp(managementLabel));
   for(const unreleased of ['/employee/training','/employee/time-clock','/employee/tips']){
