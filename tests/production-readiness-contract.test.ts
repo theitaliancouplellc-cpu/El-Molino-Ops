@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {existsSync,readFileSync} from 'node:fs';
+import {isStaffProductPathAllowed} from '../lib/staff-features';
 
 const read=(p:string)=>{assert.ok(existsSync(p),`required release artifact missing: ${p}`);return readFileSync(p,'utf8')};
 const guard=read('app/employee-root-redirect.tsx');
@@ -31,9 +32,11 @@ test('installed PWA identity is safe for both staff and management',()=>{
 
 test('employees remain structurally separated from management and sensitive shared surfaces',()=>{
   assert.match(guard,/app_role.*employee/);
-  for(const blocked of ['/admin','/manager','/performance','/logbook','/inventory','/safety','/maintenance','/incidents','/cash','/vendors','/procedures','/capture','/files','/menu','/ops','/tools']) assert.match(guard,new RegExp(blocked.replaceAll('/','\\/')));
+  assert.match(guard,/isStaffProductPathAllowed/);
+  for(const blocked of ['/admin','/manager','/performance','/logbook','/inventory','/safety','/maintenance','/incidents','/cash','/vendors','/procedures','/capture','/files','/menu','/ops','/tools','/team','/discussions']) assert.equal(isStaffProductPathAllowed(blocked),false,blocked);
+  for(const allowed of ['/employee','/employee/schedule','/employee/requests','/employee/shift-pool','/employee/team','/employee/notifications','/employee/more','/account']) assert.equal(isStaffProductPathAllowed(allowed),true,allowed);
   assert.match(commands,/appRole==='employee'\?employeeCommands:managerCommands/);
-  const employeeCatalog=commands.split('const employeeCommands')[1]?.split('const stableResultHref')[0]||'';
+  const employeeCatalog=commands.split('const employeeCommands')[1]?.split('const [open')[0]||'';
   assert.doesNotMatch(employeeCatalog,/href:'\/manager/);
   assert.doesNotMatch(employeeCatalog,/href:'\/admin/);
   assert.doesNotMatch(employeeCatalog,/href:'\/cash/);

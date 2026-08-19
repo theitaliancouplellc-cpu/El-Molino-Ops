@@ -4,6 +4,7 @@ import {useEffect,useMemo,useState} from 'react';
 import {ArrowLeft,Bell,CheckCheck,ChevronRight,Filter,Settings2} from 'lucide-react';
 import {supabase} from '@/lib/supabase';
 import {employeeNotificationHref,normalizeEmployeeNotificationCategory,notificationTimeLabel,type EmployeeNotificationCategory} from '@/lib/employee-notifications';
+import {isStaffNotificationReleased} from '@/lib/staff-features';
 import {useI18n} from '@/lib/i18n';
 import styles from '../employee.module.css';
 
@@ -19,9 +20,9 @@ const labels={
 export default function EmployeeNotificationCenter(){
  const {locale}=useI18n();
  const c=locale==='es'?{
-  loadError:'No se pudo cargar tu cuenta del personal.',refreshError:'No se pudieron actualizar las notificaciones.',markError:'No se pudieron marcar las notificaciones como leídas.',opening:'Abriendo notificaciones…',back:'Volver al inicio del personal',staff:'Personal de El Molino',title:'Notificaciones',settings:'Configuración de notificaciones',center:'Centro de Notificaciones',unread:'sin leer',body:'Los cambios de horario, solicitudes, novedades del equipo, capacitación y otros eventos del personal permanecen aquí incluso después de leerlos.',mark:'Marcar',all:'todas',filtered:'filtradas',read:'como leídas',preferences:'Preferencias',filters:'Filtros de notificaciones',allLabel:'Todas',critical:'Crítico',important:'Importante',details:'Abrir para ver detalles.',empty:'Aún no hay notificaciones.',emptyCategory:'Aún no hay nada en esta categoría.'
+  loadError:'No se pudo cargar tu cuenta del personal.',refreshError:'No se pudieron actualizar las notificaciones.',markError:'No se pudieron marcar las notificaciones como leídas.',opening:'Abriendo notificaciones…',back:'Volver al inicio del personal',staff:'Personal de El Molino',title:'Notificaciones',settings:'Configuración de notificaciones',center:'Centro de Notificaciones',unread:'sin leer',body:'Los cambios de horario, solicitudes y novedades del equipo permanecen aquí incluso después de leerlos.',mark:'Marcar',all:'todas',filtered:'filtradas',read:'como leídas',preferences:'Preferencias',filters:'Filtros de notificaciones',allLabel:'Todas',critical:'Crítico',important:'Importante',details:'Abrir para ver detalles.',empty:'Aún no hay notificaciones.',emptyCategory:'Aún no hay nada en esta categoría.'
  }:{
-  loadError:'Could not load your staff account.',refreshError:'Notifications could not be refreshed.',markError:'Could not mark notifications as read.',opening:'Opening notifications…',back:'Back to staff home',staff:'El Molino Staff',title:'Notifications',settings:'Notification settings',center:'Notification Center',unread:'unread',body:'Schedule changes, requests, team updates, training and other staff events stay here even after you read them.',mark:'Mark',all:'all',filtered:'filtered',read:'read',preferences:'Preferences',filters:'Notification filters',allLabel:'All',critical:'Critical',important:'Important',details:'Open for details.',empty:'No notifications yet.',emptyCategory:'Nothing in this category yet.'
+  loadError:'Could not load your staff account.',refreshError:'Notifications could not be refreshed.',markError:'Could not mark notifications as read.',opening:'Opening notifications…',back:'Back to staff home',staff:'El Molino Staff',title:'Notifications',settings:'Notification settings',center:'Notification Center',unread:'unread',body:'Schedule changes, requests and team updates stay here even after you read them.',mark:'Mark',all:'all',filtered:'filtered',read:'read',preferences:'Preferences',filters:'Notification filters',allLabel:'All',critical:'Critical',important:'Important',details:'Open for details.',empty:'No notifications yet.',emptyCategory:'Nothing in this category yet.'
  };
  const [ready,setReady]=useState(false),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[notices,setNotices]=useState<Notice[]>([]),[filter,setFilter]=useState<FilterKey>('all');
  useEffect(()=>{void load()},[]);
@@ -34,15 +35,19 @@ export default function EmployeeNotificationCenter(){
   const setup=await supabase.rpc('employee_self_setup_status',{});if(setup.error||setup.data?.status!=='approved'){location.href='/employee/setup';return}
   const n=await supabase.from('notifications').select('id,title,body,href,read_at,created_at,type,category,event_key,priority,data').order('created_at',{ascending:false}).limit(200);
   if(n.error)setMessage(c.refreshError);
-  setNotices((n.data??[]) as Notice[]);setReady(true);setBusy(false)
+  setNotices(((n.data??[]) as Notice[]).filter(isStaffNotificationReleased));setReady(true);setBusy(false)
  }
  async function openNotice(n:Notice){
   if(!n.read_at)await supabase.rpc('mark_my_notification_read',{p_notification_id:n.id});
   location.href=employeeNotificationHref(n.href,n.id)
  }
  async function markAll(){
-  if(busy)return;setBusy(true);const {error}=await supabase.rpc('mark_all_my_notifications_read',{p_category:filter==='all'?null:filter});
-  if(error)setMessage(c.markError);else await load();setBusy(false)
+  if(busy)return;
+  setBusy(true);setMessage('');
+  const targets=filter==='all'?Array.from(new Set(notices.filter(n=>!n.read_at).map(n=>normalizeEmployeeNotificationCategory(n.category)))):[filter];
+  const results=await Promise.all(targets.map(category=>supabase.rpc('mark_all_my_notifications_read',{p_category:category})));
+  if(results.some(result=>result.error))setMessage(c.markError);else await load();
+  setBusy(false)
  }
  const filtered=useMemo(()=>filter==='all'?notices:notices.filter(n=>normalizeEmployeeNotificationCategory(n.category)===filter),[filter,notices]);
  const unread=notices.filter(n=>!n.read_at).length;

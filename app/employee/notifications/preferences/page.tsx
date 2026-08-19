@@ -4,6 +4,7 @@ import {useEffect,useState} from 'react';
 import {ArrowLeft,BellRing,Mail,MessageSquareText,Save,Smartphone} from 'lucide-react';
 import {supabase} from '@/lib/supabase';
 import {type EmployeeNotificationCategory} from '@/lib/employee-notifications';
+import {isStaffNotificationReleased} from '@/lib/staff-features';
 import {disablePushOnThisDevice,enablePushOnThisDevice,getPushDeviceState,isIosLike,isStandaloneApp,type PushDeviceState} from '@/lib/employee-push';
 import {useI18n} from '@/lib/i18n';
 import styles from '../../employee.module.css';
@@ -31,7 +32,7 @@ export default function EmployeeNotificationPreferences(){
   const {data:u}=await supabase.auth.getUser();if(!u.user){location.href='/';return}
   const p=await supabase.from('profiles').select('app_role').eq('id',u.user.id).single();if(p.error||p.data?.app_role!=='employee'){location.href=p.data?'/manager':'/';return}
   const st=await supabase.rpc('employee_self_setup_status',{});if(st.error||st.data?.status!=='approved'){location.href='/employee/setup';return}
-  const r=await supabase.rpc('get_my_notification_preferences',{});if(r.error)setMessage(c.loadError);setPrefs((Array.isArray(r.data)?r.data:[]) as Preference[]);await refreshDeviceState();setReady(true);setBusy(false)
+  const r=await supabase.rpc('get_my_notification_preferences',{});if(r.error)setMessage(c.loadError);const all=(Array.isArray(r.data)?r.data:[]) as Preference[];setPrefs(all.filter(p=>isStaffNotificationReleased({category:p.category})));await refreshDeviceState();setReady(true);setBusy(false)
  }
  function patch(category:EmployeeNotificationCategory,key:'push'|'email'|'sms',value:boolean){setPrefs(list=>list.map(p=>p.category===category?{...p,[key]:value}:p))}
  function patchSettings(category:EmployeeNotificationCategory,settings:Record<string,unknown>){setPrefs(list=>list.map(p=>p.category===category?{...p,settings}:p))}
