@@ -1,0 +1,110 @@
+name: Phase 1 Vercel Prebuilt Preview
+
+on:
+  push:
+    branches:
+      - ops/phase1-vercel-prebuilt-runner
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase1-vercel-prebuilt-preview
+  cancel-in-progress: false
+
+jobs:
+  deploy-preview:
+    name: Exact-head Vercel prebuilt preview
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      TARGET_SHA: e03ed65b5af4174c8430df9c9e761c21d9bac705
+      VERCEL_ORG_ID: team_FuDhMvN3hlJNGfM6tfPRVpFb
+      VERCEL_PROJECT_ID: prj_zfyH8VmoUqWZj3gbiw56IMxncnxv
+      VERCEL_SCOPE: theitaliancouplellc-1161s-projects
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_CLI_VERSION: 58.4.4
+    steps:
+      - name: Validate deployment credential presence
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${VERCEL_TOKEN:-}" ]; then
+            echo '::error::Required GitHub Actions secret VERCEL_TOKEN is unavailable; exact-head prebuilt Vercel preview cannot be created safely.'
+            exit 1
+          fi
+
+      - name: Checkout immutable PR 120 head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_SHA }}
+          fetch-depth: 1
+
+      - name: Prove immutable source identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          test "$ACTUAL_SHA" = "$TARGET_SHA" || { echo "::error::Checked out $ACTUAL_SHA, expected $TARGET_SHA"; exit 1; }
+          test -z "$(git status --porcelain)" || { echo '::error::Exact-head checkout is not clean'; git status --short; exit 1; }
+          echo "source_sha=$ACTUAL_SHA" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install pinned Vercel CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --global "vercel@$VERCEL_CLI_VERSION"
+          ACTUAL_VERSION="$(vercel --version | tail -n 1 | tr -d '\r')"
+          echo "vercel_cli=$ACTUAL_VERSION" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Pull legitimate Vercel Preview project configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          vercel pull --yes --environment=preview --git-branch=staff/phase1-release-boundary --scope="$VERCEL_SCOPE" --token="$VERCEL_TOKEN"
+          node - <<'NODE'
+          const fs=require('fs');
+          const p=JSON.parse(fs.readFileSync('.vercel/project.json','utf8'));
+          if(p.orgId!==process.env.VERCEL_ORG_ID) throw new Error(`Vercel org mismatch: ${p.orgId}`);
+          if(p.projectId!==process.env.VERCEL_PROJECT_ID) throw new Error(`Vercel project mismatch: ${p.projectId}`);
+          if(!fs.existsSync('.vercel/.env.preview.local')) throw new Error('Preview environment file was not pulled');
+          NODE
+
+      - name: Build exact-head Vercel artifact outside Vercel cloud build quota
+        shell: bash
+        run: |
+          set -euo pipefail
+          EL_MOLINO_RELEASE_SHA="$TARGET_SHA" vercel build --scope="$VERCEL_SCOPE" --token="$VERCEL_TOKEN"
+          test -d .vercel/output || { echo '::error::Vercel Build Output API artifact missing'; exit 1; }
+
+      - name: Deploy immutable prebuilt artifact to Vercel Preview
+        id: deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          PREVIEW_URL="$(vercel deploy --prebuilt --archive=tgz --scope="$VERCEL_SCOPE" --token="$VERCEL_TOKEN" --env "EL_MOLINO_RELEASE_SHA=$TARGET_SHA" --meta "release_sha=$TARGET_SHA" --meta "release_phase=1" --meta "build_method=github-actions-prebuilt" | tail -n 1 | tr -d '\r')"
+          case "$PREVIEW_URL" in
+            https://*.vercel.app) ;;
+            *) echo "::error::Unexpected Vercel preview URL: $PREVIEW_URL"; exit 1;;
+          esac
+          printf '%s\n' "$PREVIEW_URL" > phase1-vercel-preview-url.txt
+          echo "preview_url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
+          {
+            echo "preview_url=$PREVIEW_URL"
+            echo "target_sha=$TARGET_SHA"
+            echo "build_method=vercel build + vercel deploy --prebuilt"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Preserve deployment evidence pointer
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1-vercel-prebuilt-preview
+          path: phase1-vercel-preview-url.txt
+          retention-days: 14
+          if-no-files-found: error
