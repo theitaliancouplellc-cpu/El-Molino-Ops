@@ -9,6 +9,7 @@ const read=(path:string)=>{
 
 const staging=read('.github/workflows/cloudflare-staging-certification.yml');
 const production=read('.github/workflows/deploy-cloudflare.yml');
+const wrangler=JSON.parse(read('wrangler.jsonc'));
 const contract=read('docs/release/CLOUDFLARE_DEPLOYMENT.md');
 
 test('pull-request Cloudflare certification is exact-SHA, isolated, and fail-closed',()=>{
@@ -19,10 +20,24 @@ test('pull-request Cloudflare certification is exact-SHA, isolated, and fail-clo
   assert.match(staging,/test "\$STAGING_WORKER" != 'el-molino-ops'/);
   assert.match(staging,/Built OpenNext artifact does not contain expected release SHA/);
   assert.match(staging,/x-el-molino-release/);
+  assert.match(staging,/wrangler deploy --env certification --name "\$STAGING_WORKER" --dry-run/);
+  assert.match(staging,/wrangler deploy --env certification --name "\$STAGING_WORKER" --keep-vars/);
   assert.match(staging,/wrangler tail "\$STAGING_WORKER" --format json --method GET/);
   assert.match(staging,/runtime tail contained failures/);
   assert.match(staging,/Production mutation: NONE/);
   assert.doesNotMatch(staging,/wrangler deploy --name "\$PRODUCTION_WORKER"/);
+});
+
+test('Cloudflare certification Worker self-reference is isolated from production',()=>{
+  assert.equal(wrangler.name,'el-molino-ops');
+  assert.deepEqual(wrangler.services,[{binding:'WORKER_SELF_REFERENCE',service:'el-molino-ops'}]);
+  assert.deepEqual(wrangler.env?.certification?.services,[
+    {binding:'WORKER_SELF_REFERENCE',service:'el-molino-ops-certification'},
+  ]);
+  assert.notEqual(
+    wrangler.env?.certification?.services?.[0]?.service,
+    wrangler.services?.[0]?.service,
+  );
 });
 
 test('manual certification cannot certify a SHA that is no longer the open PR head',()=>{
@@ -39,6 +54,8 @@ test('production Cloudflare release stages the exact main SHA before production'
   assert.match(production,/test "\$GITHUB_REF" = 'refs\/heads\/main'/);
   assert.match(production,/TARGET_SHA: \$\{\{ github\.sha \}\}/);
   assert.match(production,/EL_MOLINO_RELEASE_SHA="\$TARGET_SHA" RELEASE_SHA="\$TARGET_SHA" npm run cf:build/);
+  assert.match(production,/wrangler deploy --env certification --name "\$STAGING_WORKER" --dry-run/);
+  assert.match(production,/wrangler deploy --env certification --name "\$STAGING_WORKER" --keep-vars/);
 
   const stagingDeploy=production.indexOf('Deploy exact main SHA to certification Worker');
   const stagingGate=production.indexOf('Gate production on exact-main staging health and root runtime');
@@ -53,6 +70,7 @@ test('production Cloudflare release stages the exact main SHA before production'
   assert.ok(productionVerify>productionDeploy);
   assert.match(production,/production release mismatch/);
   assert.match(production,/production required health check failed/);
+  assert.doesNotMatch(production,/wrangler deploy --env certification --name "\$PRODUCTION_WORKER"/);
 });
 
 test('canonical release documentation preserves single-writer and data-safety caveats',()=>{
