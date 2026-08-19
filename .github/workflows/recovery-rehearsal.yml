@@ -1,0 +1,72 @@
+name: Disaster Recovery Rehearsal
+
+on:
+  schedule:
+    - cron: '17 8 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: disaster-recovery-rehearsal
+  cancel-in-progress: false
+
+jobs:
+  portable-backup-contract:
+    name: Rehearse portable backup recovery contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout exact repository SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Run backup and restore regression contracts
+        run: npx tsx --test tests/backup-manifest-contract.test.ts tests/backup-integrity.test.ts tests/disaster-recovery-contract.test.ts
+
+      - name: Run non-destructive synthetic recovery rehearsal
+        env:
+          RECOVERY_EVIDENCE_PATH: artifacts/recovery-rehearsal.json
+        run: npx tsx scripts/recovery-rehearsal.ts
+
+      - name: Upload sanitized recovery evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: recovery-rehearsal-${{ github.sha }}
+          path: artifacts/recovery-rehearsal.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Publish recovery rehearsal summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## Disaster Recovery Rehearsal'
+            echo
+            echo "- Exact SHA: \`${GITHUB_SHA}\`"
+            echo '- Scope: synthetic portable-backup contract validation only'
+            echo '- Production database access: none'
+            echo '- Production writes: none'
+            echo '- Storage object bytes: not covered by portable JSON recovery'
+            if [ -f artifacts/recovery-rehearsal.json ]; then
+              echo
+              echo '```json'
+              cat artifacts/recovery-rehearsal.json
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
