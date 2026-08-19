@@ -22,6 +22,14 @@
           "service": "el-molino-ops-certification"
         }
       ]
+    },
+    "release_gate": {
+      "services": [
+        {
+          "binding": "WORKER_SELF_REFERENCE",
+          "service": "el-molino-ops-release-gate"
+        }
+      ]
     }
   },
   "observability": {

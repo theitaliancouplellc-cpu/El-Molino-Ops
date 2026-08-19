@@ -28,16 +28,29 @@ test('pull-request Cloudflare certification is exact-SHA, isolated, and fail-clo
   assert.doesNotMatch(staging,/wrangler deploy --name "\$PRODUCTION_WORKER"/);
 });
 
-test('Cloudflare certification Worker self-reference is isolated from production',()=>{
+test('PR certification and production release use distinct queue lanes and distinct Workers',()=>{
+  assert.match(staging,/group: cloudflare-release-control-plane/);
+  assert.match(production,/group: cloudflare-production-release/);
+  assert.doesNotMatch(production,/group: cloudflare-release-control-plane/);
+  assert.match(staging,/STAGING_WORKER: el-molino-ops-certification/);
+  assert.match(production,/STAGING_WORKER: el-molino-ops-release-gate/);
+  assert.doesNotMatch(production,/STAGING_WORKER: el-molino-ops-certification/);
+  assert.match(staging,/cancel-in-progress: false/);
+  assert.match(production,/cancel-in-progress: false/);
+});
+
+test('Cloudflare non-production Workers self-reference their own isolated Worker',()=>{
   assert.equal(wrangler.name,'el-molino-ops');
   assert.deepEqual(wrangler.services,[{binding:'WORKER_SELF_REFERENCE',service:'el-molino-ops'}]);
   assert.deepEqual(wrangler.env?.certification?.services,[
     {binding:'WORKER_SELF_REFERENCE',service:'el-molino-ops-certification'},
   ]);
-  assert.notEqual(
-    wrangler.env?.certification?.services?.[0]?.service,
-    wrangler.services?.[0]?.service,
-  );
+  assert.deepEqual(wrangler.env?.release_gate?.services,[
+    {binding:'WORKER_SELF_REFERENCE',service:'el-molino-ops-release-gate'},
+  ]);
+  assert.notEqual(wrangler.env?.certification?.services?.[0]?.service,wrangler.services?.[0]?.service);
+  assert.notEqual(wrangler.env?.release_gate?.services?.[0]?.service,wrangler.services?.[0]?.service);
+  assert.notEqual(wrangler.env?.release_gate?.services?.[0]?.service,wrangler.env?.certification?.services?.[0]?.service);
 });
 
 test('manual certification cannot certify a SHA that is no longer the open PR head',()=>{
@@ -49,15 +62,14 @@ test('manual certification cannot certify a SHA that is no longer the open PR he
   assert.match(staging,/Fork PRs are not eligible/);
 });
 
-test('production Cloudflare release stages the exact main SHA before production',()=>{
-  assert.match(production,/group: cloudflare-release-control-plane/);
+test('production Cloudflare release gates the exact main SHA on its dedicated Worker before production',()=>{
   assert.match(production,/test "\$GITHUB_REF" = 'refs\/heads\/main'/);
   assert.match(production,/TARGET_SHA: \$\{\{ github\.sha \}\}/);
   assert.match(production,/EL_MOLINO_RELEASE_SHA="\$TARGET_SHA" RELEASE_SHA="\$TARGET_SHA" npm run cf:build/);
-  assert.match(production,/wrangler deploy --env certification --name "\$STAGING_WORKER" --dry-run/);
-  assert.match(production,/wrangler deploy --env certification --name "\$STAGING_WORKER" --keep-vars/);
+  assert.match(production,/wrangler deploy --env release_gate --name "\$STAGING_WORKER" --dry-run/);
+  assert.match(production,/wrangler deploy --env release_gate --name "\$STAGING_WORKER" --keep-vars/);
 
-  const stagingDeploy=production.indexOf('Deploy exact main SHA to certification Worker');
+  const stagingDeploy=production.indexOf('Deploy exact main SHA to release-gate Worker');
   const stagingGate=production.indexOf('Gate production on exact-main staging health and root runtime');
   const runtimeGate=production.indexOf('Capture exact-main staging runtime-tail evidence');
   const productionDeploy=production.indexOf('Deploy already-built exact SHA to production Worker');
@@ -70,7 +82,7 @@ test('production Cloudflare release stages the exact main SHA before production'
   assert.ok(productionVerify>productionDeploy);
   assert.match(production,/production release mismatch/);
   assert.match(production,/production required health check failed/);
-  assert.doesNotMatch(production,/wrangler deploy --env certification --name "\$PRODUCTION_WORKER"/);
+  assert.doesNotMatch(production,/wrangler deploy --env release_gate --name "\$PRODUCTION_WORKER"/);
 });
 
 test('canonical release documentation preserves single-writer and data-safety caveats',()=>{
