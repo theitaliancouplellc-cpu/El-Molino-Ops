@@ -142,7 +142,7 @@ jobs:
         run: |
           set -euo pipefail
           EL_MOLINO_RELEASE_SHA="$TARGET_SHA" RELEASE_SHA="$TARGET_SHA" \
-            npx wrangler deploy --env certification --name "$STAGING_WORKER" --keep-vars 2>&1 | tee /tmp/cf-deploy.log
+            npx wrangler deploy --env certification --name "$STAGING_WORKER" --keep-vars --var "EL_MOLINO_RELEASE_SHA:$TARGET_SHA" "RELEASE_SHA:$TARGET_SHA" 2>&1 | tee /tmp/cf-deploy.log
           SUBDOMAIN="$(cat /tmp/cf-subdomain)"
           URL="https://${STAGING_WORKER}.${SUBDOMAIN}.workers.dev"
           printf '%s' "$URL" > /tmp/cf-staging-url
