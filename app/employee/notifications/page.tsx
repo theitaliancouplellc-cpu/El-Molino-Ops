@@ -42,8 +42,12 @@ export default function EmployeeNotificationCenter(){
   location.href=employeeNotificationHref(n.href,n.id)
  }
  async function markAll(){
-  if(busy)return;setBusy(true);const {error}=await supabase.rpc('mark_all_my_notifications_read',{p_category:filter==='all'?null:filter});
-  if(error)setMessage(c.markError);else await load();setBusy(false)
+  if(busy)return;
+  setBusy(true);setMessage('');
+  const targets=filter==='all'?Array.from(new Set(notices.filter(n=>!n.read_at).map(n=>normalizeEmployeeNotificationCategory(n.category)))):[filter];
+  const results=await Promise.all(targets.map(category=>supabase.rpc('mark_all_my_notifications_read',{p_category:category})));
+  if(results.some(result=>result.error))setMessage(c.markError);else await load();
+  setBusy(false)
  }
  const filtered=useMemo(()=>filter==='all'?notices:notices.filter(n=>normalizeEmployeeNotificationCategory(n.category)===filter),[filter,notices]);
  const unread=notices.filter(n=>!n.read_at).length;
