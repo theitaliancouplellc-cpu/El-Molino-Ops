@@ -50,7 +50,7 @@ const STAFF_ROUTE_RELEASE_RULES: readonly RouteReleaseRule[] = [
 ];
 
 const STAFF_LIFECYCLE_PREFIXES = ['/employee/setup', '/employee/access'] as const;
-const STAFF_SHARED_ALLOWED_PREFIXES = ['/account', '/delete-account', '/privacy', '/support'] as const;
+const STAFF_SHARED_ALLOWED_PATHS = new Set<string>(['/account', '/delete-account', '/privacy', '/support']);
 
 function normalizedPath(pathname: string): string {
   return (pathname || '/').split(/[?#]/, 1)[0] || '/';
@@ -82,7 +82,7 @@ export function isStaffProductPathAllowed(pathname: string): boolean {
   const normalized = normalizedPath(pathname);
   if (normalized === '/') return true;
   if (routeMatches(normalized, '/employee')) return isStaffRouteReleased(normalized);
-  return matchesAny(normalized, STAFF_SHARED_ALLOWED_PREFIXES);
+  return STAFF_SHARED_ALLOWED_PATHS.has(normalized);
 }
 
 type StaffNotificationLike = {
