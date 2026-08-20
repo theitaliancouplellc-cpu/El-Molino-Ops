@@ -11,15 +11,15 @@ export default function StaffTutorialsPage(){
  const [complete,setComplete]=useState(false);
  useEffect(()=>{setComplete(window.localStorage.getItem(STAFF_TOUR_COMPLETION_KEY)==='complete')},[]);
  const c=locale==='es'?{
-  title:'Guía de la aplicación',eyebrow:'El Molino · Equipo',body:'Una guía corta de las herramientas que están disponibles para el equipo en este momento. No incluye funciones administrativas ni módulos que todavía no se han publicado.',
+  title:'Guía de la aplicación',eyebrow:'El Molino · Equipo',body:'Una guía corta de las herramientas que están disponibles para el equipo en este momento.',
   complete:'Guía completada',notComplete:'Guía pendiente',start:complete?'Repetir guía':'Empezar guía',areas:'Áreas disponibles',areasBody:'Abre cualquier sección para practicar a tu ritmo.',
   home:'Inicio',homeBody:'Próximo turno, avisos importantes y accesos rápidos.',schedule:'Horario',scheduleBody:'Tus turnos publicados y detalles de trabajo.',requests:'Solicitudes',requestsBody:'Disponibilidad, tiempo libre y estado de solicitudes.',messages:'Mensajes',messagesBody:'Conversaciones, anuncios y contacto con gerencia.',more:'Más',moreBody:'Notificaciones, preferencias, cuenta, idioma y esta guía.',
-  note:'Alcance de esta guía',noteBody:'La guía solo cubre herramientas que ya están disponibles para el equipo. Capacitación, reloj de tiempo, propinas y otras funciones futuras no forman parte de esta versión.',back:'Volver a Más'
+  note:'Alcance de esta guía',noteBody:'La guía se limita a las herramientas disponibles en tu aplicación de equipo.',back:'Volver a Más'
  }:{
-  title:'App guide',eyebrow:'El Molino · Staff',body:'A short guide to the Staff tools that are available right now. It does not include admin functions or modules that have not been released yet.',
+  title:'App guide',eyebrow:'El Molino · Staff',body:'A short guide to the Staff tools that are available right now.',
   complete:'Guide completed',notComplete:'Guide not completed',start:complete?'Restart guided tour':'Start guided tour',areas:'Available areas',areasBody:'Open any section to practice at your own pace.',
   home:'Home',homeBody:'Next shift, important updates and quick actions.',schedule:'Schedule',scheduleBody:'Your published shifts and work details.',requests:'Requests',requestsBody:'Availability, time off and request status.',messages:'Messages',messagesBody:'Conversations, announcements and manager contact.',more:'More',moreBody:'Notifications, preferences, account, language and this guide.',
-  note:'What this guide covers',noteBody:'This guide only covers tools already available to Staff. Training, Time Clock, Tips and other future features are not part of this release.',back:'Back to More'
+  note:'What this guide covers',noteBody:'This guide stays within the tools currently available in your Staff app.',back:'Back to More'
  };
  const cards=[
   {href:'/employee',label:c.home,body:c.homeBody,Icon:Home},
