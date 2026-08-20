@@ -38,6 +38,13 @@ jobs:
           test "${#TARGET_SHA}" -eq 40
           printf '%s' "$TARGET_SHA" | grep -Eq '^[0-9a-f]{40}$'
 
+      - name: Checkout exact main SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_SHA }}
+          fetch-depth: 1
+          persist-credentials: false
+
       - name: Require merged-PR release provenance
         shell: bash
         env:
@@ -45,13 +52,6 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/verify-main-release-provenance.mjs
-
-      - name: Checkout exact main SHA
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.TARGET_SHA }}
-          fetch-depth: 1
-          persist-credentials: false
 
       - name: Prove immutable main source
         shell: bash
