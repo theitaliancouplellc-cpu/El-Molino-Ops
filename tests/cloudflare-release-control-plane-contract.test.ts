@@ -87,8 +87,9 @@ test('production Cloudflare release gates the exact main SHA on its dedicated Wo
   assert.doesNotMatch(production,/wrangler deploy --env release_gate --name "\$PRODUCTION_WORKER"/);
 });
 
-test('production runtime-tail probes tolerate propagation delay but remain exact-identity and fail-closed',()=>{
-  assert.match(production,/wrangler tail "\$STAGING_WORKER" --env release_gate --format json --method GET/);
+test('production runtime-tail probes target the explicit release-gate Worker and remain exact-identity fail-closed',()=>{
+  assert.match(production,/wrangler tail "\$STAGING_WORKER" --format json --method GET/);
+  assert.doesNotMatch(production,/wrangler tail "\$STAGING_WORKER" --env release_gate/);
   assert.match(production,/kill -0 "\$TAIL_PID"/);
   assert.match(production,/successful_probes=0/);
   assert.match(production,/for i in \{1\.\.8\}/);
