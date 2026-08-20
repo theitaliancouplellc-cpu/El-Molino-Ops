@@ -27,25 +27,17 @@ test('guided tour is on-demand, local-only, and mounted behind the Staff release
  assert.match(tour,/new URLSearchParams\(window\.location\.search\)\.get\('tour'\)==='1'/);
  assert.match(tour,/STAFF_TOUR_COMPLETION_KEY='el-molino-staff-tour-v1'/);
  assert.match(tour,/window\.localStorage\.setItem\(STAFF_TOUR_COMPLETION_KEY,'complete'\)/);
- assert.doesNotMatch(tour,/localStorage\.getItem\(STAFF_TOUR_COMPLETION_KEY\).*setActive\(true\)/s);
+ assert.doesNotMatch(tour,/localStorage\.getItem\(STAFF_TOUR_COMPLETION_KEY\)[\s\S]*setActive\(true\)/);
  for(const source of [tour,tutorialPage]){
   assert.doesNotMatch(source,/\bsupabase\b|\.rpc\(|\bfetch\(|XMLHttpRequest|navigator\.sendBeacon/i);
  }
 });
 
 test('guided tour targets only stable released Staff controls that exist in the current UI',()=>{
- const selectors=[
-  ['next-shift','data-tour="next-shift"'],
-  ['schedule','data-tour="schedule"'],
-  ['request-time-off','data-tour="request-time-off"'],
-  ['messages','data-tour="messages"'],
-  ['more',"'more'"],
- ] as const;
- for(const [key,actual] of selectors){
-  assert.match(tour,new RegExp(`selector:'\\[data-tour=\\"${key}\\"\\]'`));
-  if(key==='more')assert.match(nav,new RegExp(`data-tour=\\{tour\\}[\\s\\S]*${actual}|${actual}[\\s\\S]*data-tour=\\{tour\\}`));
-  else assert.match(home,new RegExp(actual));
- }
+ for(const key of ['next-shift','schedule','request-time-off','messages','more'])assert.match(tour,new RegExp(`selector:'\\[data-tour=\\"${key}\\"\\]'`));
+ for(const actual of ['data-tour="next-shift"','data-tour="schedule"','data-tour="request-time-off"','data-tour="messages"'])assert.match(home,new RegExp(actual));
+ assert.match(nav,/data-tour=\{tour\}/);
+ assert.match(nav,/tab\('more','\/employee\/more',[\s\S]*,'more'\)/);
  assert.doesNotMatch(tour,/employee\/training|employee\/time-clock|employee\/tips|\/manager|\/admin|\/ops|\/inventory/i);
 });
 
