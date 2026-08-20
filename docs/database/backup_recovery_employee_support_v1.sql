@@ -1,4 +1,6 @@
--- Recovery allow-list extension for durable Staff support reports.
+-- Recovery contract extension for durable Staff support reports.
+-- The browser manifest and server begin gate advance together so v5 exports are
+-- restorable and legacy v4 files fail explicitly instead of being partially staged.
 create or replace function private.backup_restore_allowed_tables()
 returns text[] language sql immutable set search_path='pg_catalog','public','private' as $$
  select array[
@@ -9,4 +11,37 @@ returns text[] language sql immutable set search_path='pg_catalog','public','pri
   'team_announcements','team_announcement_recipients','team_shoutouts','team_shoutout_reactions','team_channels','team_channel_members','team_channel_messages','team_message_reactions','team_message_mentions',
   'training_lessons','training_courses','training_course_lessons','training_quiz_questions','training_course_assignments','training_course_lesson_progress','training_quiz_attempts','training_lesson_comments','hiring_job_postings','hiring_applicants','hiring_stage_history','hiring_interviews','hiring_manager_notes','hiring_offers','onboarding_packages','onboarding_documents','onboarding_package_items','onboarding_assignments','onboarding_item_progress','onboarding_acknowledgments','onboarding_comments'
  ]::text[]
+$$;
+
+create or replace function public.begin_backup_restore(
+ p_format text,
+ p_schema_version integer,
+ p_schema_fingerprint text,
+ p_exported_at timestamptz,
+ p_backup_location uuid,
+ p_manifest_tables text[]
+) returns uuid
+language plpgsql
+security definer
+set search_path='pg_catalog','public','private'
+as $$
+declare
+ loc uuid:=public.current_location_id();
+ sid uuid;
+ allowed text[]:=private.backup_restore_allowed_tables();
+ got text[];
+ want text[];
+begin
+ if auth.uid() is null or public.current_app_role()<>'admin' then raise exception 'admin access required'; end if;
+ if loc is null or p_backup_location is distinct from loc then raise exception 'backup belongs to a different location'; end if;
+ if p_format<>'el-molino-ops-backup-v5' or p_schema_version<>5 then raise exception 'unsupported backup format'; end if;
+ if p_schema_fingerprint is distinct from private.backup_restore_schema_fingerprint_internal() then raise exception 'backup schema fingerprint does not match the running database'; end if;
+ select array_agg(x order by x) into got from (select distinct unnest(p_manifest_tables) x) q;
+ select array_agg(x order by x) into want from unnest(allowed) x;
+ if got is distinct from want or cardinality(p_manifest_tables)<>cardinality(allowed) then raise exception 'backup manifest does not match recovery table set'; end if;
+ delete from private.backup_restore_sessions where (expires_at<now() or status in ('cancelled','failed')) and created_at<now()-interval '1 day';
+ insert into private.backup_restore_sessions(location_id,created_by,format,schema_version,schema_fingerprint,exported_at)
+ values(loc,auth.uid(),p_format,p_schema_version,p_schema_fingerprint,p_exported_at) returning id into sid;
+ return sid;
+end
 $$;
