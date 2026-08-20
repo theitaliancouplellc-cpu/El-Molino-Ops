@@ -174,7 +174,7 @@ jobs:
           URL="$(cat /tmp/cf-staging-url)"
           : > /tmp/cf-tail.json
           : > /tmp/cf-tail.err
-          npx wrangler tail "$STAGING_WORKER" --env release_gate --format json --method GET > /tmp/cf-tail.json 2>/tmp/cf-tail.err &
+          npx wrangler tail "$STAGING_WORKER" --format json --method GET > /tmp/cf-tail.json 2>/tmp/cf-tail.err &
           TAIL_PID=$!
           cleanup_tail() {
             kill -INT "$TAIL_PID" 2>/dev/null || true
