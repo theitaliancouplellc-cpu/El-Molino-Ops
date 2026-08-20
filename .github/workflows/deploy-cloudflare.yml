@@ -166,6 +166,8 @@ jobs:
           curl -fsS -H 'Cache-Control: no-cache, no-store, max-age=0' "$URL/?release=$TARGET_SHA" | grep -q 'El Molino Ops'
 
       - name: Capture exact-main staging runtime-tail evidence
+        id: runtime_tail
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
@@ -229,6 +231,131 @@ jobs:
           print(f'tail_events={seen} tagged_health_events={tagged} runtime_failures={len(bad)}')
           if seen < 1 or tagged < 1 or bad: raise SystemExit('staging runtime-tail gate failed')
           PY
+
+      - name: Build sanitized runtime-tail diagnostics
+        if: ${{ steps.runtime_tail.outcome != 'success' }}
+        shell: bash
+        env:
+          RUNTIME_TAIL_OUTCOME: ${{ steps.runtime_tail.outcome }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import collections, hashlib, json, os, re
+          from urllib.parse import parse_qs, urlparse
+
+          target=os.environ.get('TARGET_SHA','')
+          tail_path='/tmp/cf-tail.json'
+          err_path='/tmp/cf-tail.err'
+          text=open(tail_path,errors='ignore').read() if os.path.exists(tail_path) else ''
+          err=open(err_path,errors='ignore').read() if os.path.exists(err_path) else ''
+          decoder=json.JSONDecoder(); objects=[]; cursor=0
+          while cursor < len(text):
+            start=text.find('{',cursor)
+            if start < 0: break
+            try: obj,end=decoder.raw_decode(text,start)
+            except json.JSONDecodeError: cursor=start+1; continue
+            if isinstance(obj,dict): objects.append(obj)
+            cursor=end
+
+          runtime=[]; tagged=[]
+          outcomes=collections.Counter(); tagged_outcomes=collections.Counter()
+          exception_events=0; tagged_exception_events=0
+          for x in objects:
+            if 'event' not in x and 'outcome' not in x: continue
+            runtime.append(x)
+            outcome=str(x.get('outcome','')).lower() or 'missing'
+            outcomes[outcome]+=1
+            exc=x.get('exceptions') or []
+            if exc: exception_events+=1
+            url=str((((x.get('event') or {}).get('request') or {}).get('url','')))
+            if '/api/health?audit=release-' not in url: continue
+            parsed=urlparse(url); q=parse_qs(parsed.query)
+            item={
+              'path':parsed.path,
+              'audit':(q.get('audit') or [None])[0],
+              'attempt':(q.get('attempt') or [None])[0],
+              'release_matches_target':(q.get('release') or [None])[0] == target,
+              'outcome':outcome,
+              'exception_count':len(exc),
+            }
+            tagged.append(item); tagged_outcomes[outcome]+=1
+            if exc: tagged_exception_events+=1
+
+          probe_files=[]
+          for i in range(1,9):
+            hp=f'/tmp/cf-tail-health-{i}.headers'; bp=f'/tmp/cf-tail-health-{i}.json'
+            header_sha=''; body_sha=''; status=''
+            if os.path.exists(hp):
+              headers=open(hp,errors='ignore').read().splitlines()
+              for line in headers:
+                if line.lower().startswith('http/'):
+                  parts=line.split(); status=parts[1] if len(parts)>1 else status
+                if line.lower().startswith('x-el-molino-release:'):
+                  header_sha=line.split(':',1)[1].strip()
+            if os.path.exists(bp):
+              try: body_sha=(json.load(open(bp)).get('release') or {}).get('sha','')
+              except Exception: pass
+            probe_files.append({
+              'probe':i,
+              'status':status or None,
+              'header_matches_target':header_sha==target,
+              'body_matches_target':body_sha==target,
+            })
+
+          def redact(line):
+            line=re.sub(r'(?i)(authorization\s*:\s*bearer\s+)[^\s]+',r'\1[REDACTED]',line)
+            line=re.sub(r'(?i)(bearer\s+)[A-Za-z0-9._~+\-/=]+',r'\1[REDACTED]',line)
+            line=re.sub(r'(?i)((?:api[_ -]?token|secret|password|api[_ -]?key)\s*[=:]\s*)[^\s]+',r'\1[REDACTED]',line)
+            return line[:1000]
+          err_lines=err.splitlines()
+          excerpt=[redact(x) for x in (err_lines[:20]+(err_lines[-20:] if len(err_lines)>20 else []))]
+
+          payload={
+            'target_sha':target,
+            'workflow_run_id':os.environ.get('GITHUB_RUN_ID'),
+            'workflow_run_attempt':os.environ.get('GITHUB_RUN_ATTEMPT'),
+            'release_gate_worker':os.environ.get('STAGING_WORKER'),
+            'runtime_tail_outcome':os.environ.get('RUNTIME_TAIL_OUTCOME'),
+            'tail_json_bytes':len(text.encode()),
+            'tail_stderr_bytes':len(err.encode()),
+            'tail_stderr_lines':len(err_lines),
+            'tail_stderr_sha256':hashlib.sha256(err.encode()).hexdigest(),
+            'tail_stderr_excerpt_redacted':excerpt,
+            'decoded_json_objects':len(objects),
+            'runtime_event_count':len(runtime),
+            'tagged_audit_event_count':len(tagged),
+            'outcomes':dict(outcomes),
+            'tagged_outcomes':dict(tagged_outcomes),
+            'exception_event_count':exception_events,
+            'tagged_exception_event_count':tagged_exception_events,
+            'tagged_events':tagged[:100],
+            'final_probe_files':probe_files,
+          }
+          with open('/tmp/cloudflare-release-tail-diagnostics.json','w') as f:
+            json.dump(payload,f,indent=2,sort_keys=True); f.write('\n')
+          print(json.dumps(payload,indent=2,sort_keys=True))
+          PY
+
+      - name: Preserve sanitized runtime-tail diagnostics
+        if: ${{ steps.runtime_tail.outcome != 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudflare-release-tail-diagnostics-${{ env.TARGET_SHA }}
+          path: /tmp/cloudflare-release-tail-diagnostics.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Enforce runtime-tail evidence gate
+        if: ${{ always() }}
+        shell: bash
+        env:
+          RUNTIME_TAIL_OUTCOME: ${{ steps.runtime_tail.outcome }}
+        run: |
+          set -euo pipefail
+          test "$RUNTIME_TAIL_OUTCOME" = 'success' || {
+            echo '::error::Release-gate runtime-tail evidence failed; production remains blocked'
+            exit 1
+          }
 
       - name: Deploy already-built exact SHA to production Worker
         shell: bash

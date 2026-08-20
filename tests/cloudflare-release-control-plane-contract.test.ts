@@ -72,13 +72,15 @@ test('production Cloudflare release gates the exact main SHA on its dedicated Wo
   const stagingDeploy=production.indexOf('Deploy exact main SHA to release-gate Worker');
   const stagingGate=production.indexOf('Gate production on exact-main staging health and root runtime');
   const runtimeGate=production.indexOf('Capture exact-main staging runtime-tail evidence');
+  const hardRuntimeGate=production.indexOf('Enforce runtime-tail evidence gate');
   const productionDeploy=production.indexOf('Deploy already-built exact SHA to production Worker');
   const productionVerify=production.indexOf('Verify exact production release identity');
 
   assert.ok(stagingDeploy>=0);
   assert.ok(stagingGate>stagingDeploy);
   assert.ok(runtimeGate>stagingGate);
-  assert.ok(productionDeploy>runtimeGate);
+  assert.ok(hardRuntimeGate>runtimeGate);
+  assert.ok(productionDeploy>hardRuntimeGate);
   assert.ok(productionVerify>productionDeploy);
   assert.match(production,/production release mismatch/);
   assert.match(production,/production required health check failed/);
@@ -97,6 +99,33 @@ test('production runtime-tail probes tolerate propagation delay but remain exact
   assert.match(production,/test "\$successful_probes" -eq 8/);
   assert.match(production,/runtime-tail gate failed/);
   assert.doesNotMatch(production,/for i in \{1\.\.8\}; do curl -fsS/);
+});
+
+test('runtime-tail failure preserves sanitized evidence but cannot reach production',()=>{
+  assert.match(production,/id: runtime_tail/);
+  assert.match(production,/continue-on-error: true/);
+  assert.match(production,/steps\.runtime_tail\.outcome != 'success'/);
+  assert.match(production,/cloudflare-release-tail-diagnostics-\$\{\{ env\.TARGET_SHA \}\}/);
+  assert.match(production,/cloudflare-release-tail-diagnostics\.json/);
+  assert.match(production,/runtime_event_count/);
+  assert.match(production,/tagged_audit_event_count/);
+  assert.match(production,/tagged_outcomes/);
+  assert.match(production,/tail_stderr_excerpt_redacted/);
+  assert.match(production,/Enforce runtime-tail evidence gate/);
+  assert.match(production,/if: \$\{\{ always\(\) \}\}/);
+  assert.match(production,/test "\$RUNTIME_TAIL_OUTCOME" = 'success'/);
+  assert.match(production,/production remains blocked/);
+
+  const capture=production.indexOf('Capture exact-main staging runtime-tail evidence');
+  const diagnostic=production.indexOf('Build sanitized runtime-tail diagnostics');
+  const artifact=production.indexOf('Preserve sanitized runtime-tail diagnostics');
+  const hardGate=production.indexOf('Enforce runtime-tail evidence gate');
+  const productionDeploy=production.indexOf('Deploy already-built exact SHA to production Worker');
+  assert.ok(capture>=0);
+  assert.ok(diagnostic>capture);
+  assert.ok(artifact>diagnostic);
+  assert.ok(hardGate>artifact);
+  assert.ok(productionDeploy>hardGate);
 });
 
 test('canonical release documentation preserves single-writer and data-safety caveats',()=>{
