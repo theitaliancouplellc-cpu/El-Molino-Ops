@@ -62,10 +62,9 @@ for (const requirement of requiredWorkflows) {
   const matching = (data.workflow_runs || [])
     .filter((run) =>
       run?.head_sha === certifiedHead &&
+      run?.head_branch === pr.head.ref &&
       run?.event === 'pull_request' &&
-      run?.name === requirement.name &&
-      Array.isArray(run.pull_requests) &&
-      run.pull_requests.some((item) => item?.number === pr.number)
+      run?.name === requirement.name
     )
     .sort((a, b) => Number(b.id || 0) - Number(a.id || 0));
   const latest = matching[0];
