@@ -22,22 +22,27 @@ test('staff feature release source hides unreleased operational domains',()=>{
   assert.equal(STAFF_FEATURES.earnings,false);
   assert.equal(STAFF_FEATURES.financialFeatures,false);
   assert.equal(STAFF_FEATURES.toastFeatures,false);
+  assert.equal(STAFF_FEATURES.systemChannels,false);
+  assert.equal(STAFF_FEATURES.support,false);
   assert.equal(STAFF_FEATURES.schedule,true);
   assert.equal(STAFF_FEATURES.requests,true);
   assert.equal(STAFF_FEATURES.communications,true);
   assert.equal(STAFF_FEATURES.notifications,true);
+  assert.equal(STAFF_FEATURES.tutorials,true);
 });
 
 test('staff route release gate is exact and fails closed for hidden, child and unknown employee routes',()=>{
-  for(const route of ['/employee/training','/employee/training/assignment/123','/employee/time-clock','/employee/time-clock/history','/employee/tips','/employee/future-module','/employee/setup/internal','/employee/access/admin','/employee/schedule/internal','/employee/requests/internal','/employee/shift-pool/internal','/employee/team/internal','/employee/more/internal','/employee/notifications/internal','/employee/notifications/preferences/internal']){
+  for(const route of ['/employee/training','/employee/training/assignment/123','/employee/time-clock','/employee/time-clock/history','/employee/tips','/employee/future-module','/employee/setup/internal','/employee/access/admin','/employee/schedule/internal','/employee/requests/internal','/employee/shift-pool/internal','/employee/team/internal','/employee/more/internal','/employee/tutorials/internal','/employee/notifications/internal','/employee/notifications/preferences/internal']){
     assert.equal(isStaffRouteReleased(route),false,route);
   }
-  for(const route of ['/employee','/employee/setup','/employee/access','/employee/schedule','/employee/requests','/employee/shift-pool','/employee/team','/employee/notifications','/employee/notifications/preferences','/employee/more']){
+  for(const route of ['/employee','/employee/setup','/employee/access','/employee/schedule','/employee/requests','/employee/shift-pool','/employee/team','/employee/notifications','/employee/notifications/preferences','/employee/more','/employee/tutorials']){
     assert.equal(isStaffRouteReleased(route),true,route);
   }
   assert.equal(staffRouteFeature('/employee/training'),'training');
   assert.equal(staffRouteFeature('/employee/time-clock'),'timeClock');
   assert.equal(staffRouteFeature('/employee/tips'),'tips');
+  assert.equal(staffRouteFeature('/employee/tutorials'),'tutorials');
+  assert.equal(staffRouteFeature('/employee/tutorials/internal'),null);
   assert.equal(staffRouteFeature('/employee/future-module'),null);
   assert.equal(staffRouteFeature('/employee/setup/internal'),null);
   assert.equal(staffRouteFeature('/employee/access/admin'),null);
@@ -45,8 +50,8 @@ test('staff route release gate is exact and fails closed for hidden, child and u
 });
 
 test('staff global product path allowlist rejects every legacy or management surface by default',()=>{
-  for(const route of ['/employee','/employee/schedule','/employee/requests','/employee/team','/employee/notifications','/employee/notifications/preferences','/employee/more','/account','/delete-account','/privacy','/support'])assert.equal(isStaffProductPathAllowed(route),true,route);
-  for(const route of ['/team','/discussions','/training','/time-clock','/tips','/schedule','/schedule/pool','/admin','/manager','/tools','/ops','/inventory','/calendar','/tasks','/shift','/saved','/ai-runtime-test','/employee/training','/employee/future-module','/employee/setup/internal','/employee/access/admin','/employee/schedule/internal','/employee/requests/internal','/employee/shift-pool/internal','/employee/team/internal','/employee/more/internal','/employee/notifications/internal','/support/admin','/privacy/internal','/account/admin','/delete-account/admin'])assert.equal(isStaffProductPathAllowed(route),false,route);
+  for(const route of ['/employee','/employee/schedule','/employee/requests','/employee/team','/employee/notifications','/employee/notifications/preferences','/employee/more','/employee/tutorials','/account','/delete-account','/privacy','/support'])assert.equal(isStaffProductPathAllowed(route),true,route);
+  for(const route of ['/team','/discussions','/training','/time-clock','/tips','/schedule','/schedule/pool','/admin','/manager','/tools','/ops','/inventory','/calendar','/tasks','/shift','/saved','/ai-runtime-test','/employee/training','/employee/future-module','/employee/setup/internal','/employee/access/admin','/employee/schedule/internal','/employee/requests/internal','/employee/shift-pool/internal','/employee/team/internal','/employee/more/internal','/employee/tutorials/internal','/employee/notifications/internal','/support/admin','/privacy/internal','/account/admin','/delete-account/admin'])assert.equal(isStaffProductPathAllowed(route),false,route);
 });
 
 test('root employee gate uses exact public and lifecycle exceptions so future nested routes fail closed',()=>{
@@ -117,6 +122,7 @@ test('hidden-domain notifications do not leak through Staff Home notification su
 });
 
 test('More remains small and contains only currently implemented staff destinations',()=>{
-  for(const href of ['/employee/team','/employee/notifications','/employee/notifications/preferences','/account'])assert.match(more,new RegExp(href.replaceAll('/','\\/')));
+  for(const href of ['/employee/team','/employee/notifications','/employee/notifications/preferences','/employee/tutorials','/account'])assert.match(more,new RegExp(href.replaceAll('/','\\/')));
+  assert.match(more,/staffFeatureEnabled\('tutorials'\)/);
   for(const hidden of ['/employee/training','/employee/time-clock','/employee/tips','/ops','/inventory','/manager','/admin'])assert.doesNotMatch(more,new RegExp(hidden.replaceAll('/','\\/')));
 });

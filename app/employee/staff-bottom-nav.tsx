@@ -21,12 +21,12 @@ export default function StaffBottomNav(){
  const {t}=useI18n();
  if(pathname==='/employee/setup'||pathname.startsWith('/employee/setup/')||pathname==='/employee/access'||pathname.startsWith('/employee/access/')||!isStaffRouteReleased(pathname))return null;
  const active=activeTab(pathname);
- const tab=(key:StaffTab,href:string,label:string,Icon:typeof Home)=><a className={`${styles.tab} ${active===key?styles.tabActive:''}`} href={href} aria-current={active===key?'page':undefined}><Icon size={19}/>{label}</a>;
+ const tab=(key:StaffTab,href:string,label:string,Icon:typeof Home,tour?:string)=><a className={`${styles.tab} ${active===key?styles.tabActive:''}`} href={href} aria-current={active===key?'page':undefined} data-tour={tour}><Icon size={19}/>{label}</a>;
  return <nav className={styles.tabs} aria-label={t('employee.staffNav')} data-staff-primary-nav>
   {tab('home','/employee',t('nav.home'),Home)}
   {tab('schedule','/employee/schedule',t('nav.schedule'),CalendarDays)}
   {tab('requests','/employee/requests',t('nav.requests'),Clock3)}
   {tab('messages','/employee/team',t('nav.messages'),MessageSquare)}
-  {tab('more','/employee/more',t('common.more'),UserRound)}
+  {tab('more','/employee/more',t('common.more'),UserRound,'more')}
  </nav>;
 }
