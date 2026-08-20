@@ -48,16 +48,17 @@ test('release provenance rejects direct, unsigned, non-merge, fork and mismatche
   assert.match(verifier,/eligible\.length !== 1/);
 });
 
-test('release provenance requires latest exact-head success from all three certified PR gates',()=>{
+test('release provenance requires latest exact-head and exact-branch success from all three certified PR gates',()=>{
   assert.match(verifier,/file: 'ci\.yml', name: 'El Molino Ops CI'/);
   assert.match(verifier,/file: 'mobile-ci\.yml', name: 'El Molino Ops Mobile CI'/);
   assert.match(verifier,/file: 'cloudflare-staging-certification\.yml', name: 'Cloudflare Staging Certification'/);
   assert.match(verifier,/head_sha: certifiedHead/);
   assert.match(verifier,/event: 'pull_request'/);
   assert.match(verifier,/run\?\.head_sha === certifiedHead/);
+  assert.match(verifier,/run\?\.head_branch === pr\.head\.ref/);
   assert.match(verifier,/run\?\.event === 'pull_request'/);
   assert.match(verifier,/run\?\.name === requirement\.name/);
-  assert.match(verifier,/item\?\.number === pr\.number/);
+  assert.doesNotMatch(verifier,/run\.pull_requests/);
   assert.match(verifier,/sort\(\(a, b\) => Number\(b\.id \|\| 0\) - Number\(a\.id \|\| 0\)\)/);
   assert.match(verifier,/latest\.status !== 'completed' \|\| latest\.conclusion !== 'success'/);
   assert.match(verifier,/has no exact-head pull-request run/);
