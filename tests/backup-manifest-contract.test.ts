@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {BACKUP_EXCLUDED_TABLES,BACKUP_FORMAT,BACKUP_TABLES} from '../lib/backup-manifest';
+import {BACKUP_EXCLUDED_TABLES,BACKUP_FORMAT,BACKUP_SCHEMA_VERSION,BACKUP_TABLES} from '../lib/backup-manifest';
 
-const SERVER_RECOVERY_TABLE_COUNT=139;
+const SERVER_RECOVERY_TABLE_COUNT=140;
 const mustCover=[
   'employee_self_setup_claims','employee_self_setup_role_claims',
-  'employee_employment_status_history','employee_role_change_requests','employee_role_change_request_roles','employee_role_assignment_history',
+  'employee_employment_status_history','employee_role_change_requests','employee_role_change_request_roles','employee_role_assignment_history','employee_support_reports',
   'schedule_shifts','shift_pool_offers','time_off_requests',
   'time_clock_punches','time_clock_breaks','time_clock_pay_periods',
   'toast_sync_state','toast_employee_map','toast_time_entries','toast_order_payments','toast_cash_entries','toast_deposits',
@@ -18,8 +18,9 @@ const mustCover=[
   'notification_preferences',
 ] as const;
 
-test('v4 backup manifest covers modern operational modules',()=>{
-  assert.equal(BACKUP_FORMAT,'el-molino-ops-backup-v4');
+test('v5 backup manifest covers modern operational modules',()=>{
+  assert.equal(BACKUP_FORMAT,'el-molino-ops-backup-v5');
+  assert.equal(BACKUP_SCHEMA_VERSION,5);
   assert.equal(BACKUP_TABLES.length,SERVER_RECOVERY_TABLE_COUNT,'browser manifest drifted from server recovery allow-list');
   for(const table of mustCover)assert.ok(BACKUP_TABLES.includes(table as any),`missing ${table}`);
 });
