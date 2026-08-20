@@ -3,10 +3,15 @@ name: El Molino Ops Native Store Release
 on:
   workflow_dispatch:
     inputs:
+      release_sha:
+        description: Exact 40-character production commit SHA to package
+        required: true
+        default: 890c0cef3b3454c986764d7977d1cf90143a5bbd
+        type: string
       server_url:
         description: HTTPS production origin embedded in the native apps
         required: true
-        default: https://el-molino-ops.vercel.app
+        default: https://el-molino-ops.el-molino-ops-7537172ca8.workers.dev
         type: string
       version_name:
         description: Store version, for example 1.0.0
@@ -18,6 +23,19 @@ on:
         required: true
         default: '1'
         type: string
+      distribution_mode:
+        description: Build artifacts only, or upload signed builds to beta stores
+        required: true
+        default: artifact-only
+        type: choice
+        options:
+          - artifact-only
+          - beta
+      google_play_track:
+        description: Google Play testing track used only in beta mode
+        required: true
+        default: internal
+        type: string
 
 permissions:
   contents: read
@@ -26,23 +44,124 @@ concurrency:
   group: native-store-release
   cancel-in-progress: false
 
+env:
+  CANONICAL_PRODUCTION_ORIGIN: https://el-molino-ops.el-molino-ops-7537172ca8.workers.dev
+
 jobs:
-  android-release:
-    name: Signed Android AAB
+  preflight:
+    name: Release identity preflight
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 10
     env:
       CAPACITOR_SERVER_URL: ${{ inputs.server_url }}
+      EL_MOLINO_RELEASE_SHA: ${{ inputs.release_sha }}
       EL_MOLINO_VERSION_NAME: ${{ inputs.version_name }}
       EL_MOLINO_BUILD_NUMBER: ${{ inputs.build_number }}
+      EL_MOLINO_DISTRIBUTION_MODE: ${{ inputs.distribution_mode }}
+      EL_MOLINO_GOOGLE_PLAY_TRACK: ${{ inputs.google_play_track }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_sha }}
+          fetch-depth: 1
+
+      - name: Verify exact release identity and inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$EL_MOLINO_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo '::error::release_sha must be a full lowercase 40-character Git SHA'; exit 1; }
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          test "$ACTUAL_SHA" = "$EL_MOLINO_RELEASE_SHA" || { echo "::error::Checkout SHA $ACTUAL_SHA does not match requested release $EL_MOLINO_RELEASE_SHA"; exit 1; }
+          [[ "$EL_MOLINO_BUILD_NUMBER" =~ ^[1-9][0-9]*$ ]] || { echo '::error::build_number must be a positive integer'; exit 1; }
+          [[ "$EL_MOLINO_VERSION_NAME" =~ ^[0-9]+(\.[0-9]+){1,2}$ ]] || { echo '::error::version_name must contain 2 or 3 numeric components'; exit 1; }
+          [[ "$EL_MOLINO_GOOGLE_PLAY_TRACK" =~ ^[A-Za-z0-9._-]+$ ]] || { echo '::error::google_play_track contains unsupported characters'; exit 1; }
+          node <<'NODE'
+          const configured = new URL(process.env.CAPACITOR_SERVER_URL);
+          if (configured.protocol !== 'https:') throw new Error('server_url must use HTTPS');
+          if (configured.username || configured.password || configured.search || configured.hash || (configured.pathname && configured.pathname !== '/')) {
+            throw new Error('server_url must be a clean HTTPS origin with no credentials, path, query, or fragment');
+          }
+          if (process.env.EL_MOLINO_DISTRIBUTION_MODE === 'beta') {
+            const canonical = new URL(process.env.CANONICAL_PRODUCTION_ORIGIN);
+            if (configured.origin !== canonical.origin) {
+              throw new Error(`beta distribution is locked to canonical production origin ${canonical.origin}`);
+            }
+          }
+          NODE
+
+      - name: Verify canonical production reports requested release
+        if: ${{ inputs.distribution_mode == 'beta' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          HEALTH_BODY="$RUNNER_TEMP/native-release-health.json"
+          HEALTH_HEADERS="$RUNNER_TEMP/native-release-health.headers"
+          curl --fail --silent --show-error --retry 3 --retry-delay 2 \
+            -D "$HEALTH_HEADERS" \
+            -o "$HEALTH_BODY" \
+            "$CANONICAL_PRODUCTION_ORIGIN/api/health"
+          HEALTH_JSON="$(cat "$HEALTH_BODY")"
+          HEALTH_JSON="$HEALTH_JSON" node <<'NODE'
+          const health = JSON.parse(process.env.HEALTH_JSON);
+          if (health.ok !== true) throw new Error('canonical production health did not report ok=true');
+          if (health.releaseSha !== process.env.EL_MOLINO_RELEASE_SHA) {
+            throw new Error(`canonical production release ${health.releaseSha ?? '<missing>'} does not match requested ${process.env.EL_MOLINO_RELEASE_SHA}`);
+          }
+          NODE
+          RELEASE_HEADER="$(tr -d '\r' < "$HEALTH_HEADERS" | awk -F': ' 'tolower($1)=="x-el-molino-release"{print $2}' | tail -n1)"
+          test "$RELEASE_HEADER" = "$EL_MOLINO_RELEASE_SHA" || { echo "::error::Canonical x-el-molino-release '$RELEASE_HEADER' does not match requested release"; exit 1; }
+
+      - name: Record immutable native release manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          const manifest = {
+            releaseSha: process.env.EL_MOLINO_RELEASE_SHA,
+            serverOrigin: new URL(process.env.CAPACITOR_SERVER_URL).origin,
+            versionName: process.env.EL_MOLINO_VERSION_NAME,
+            buildNumber: process.env.EL_MOLINO_BUILD_NUMBER,
+            distributionMode: process.env.EL_MOLINO_DISTRIBUTION_MODE,
+            googlePlayTrack: process.env.EL_MOLINO_GOOGLE_PLAY_TRACK,
+            workflowRunId: process.env.GITHUB_RUN_ID,
+            workflowRunAttempt: process.env.GITHUB_RUN_ATTEMPT,
+          };
+          fs.writeFileSync('native-release-manifest.json', `${JSON.stringify(manifest, null, 2)}\n`);
+          NODE
+          cat native-release-manifest.json >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-release-manifest
+          path: native-release-manifest.json
+          if-no-files-found: error
+          retention-days: 30
+
+  android-release:
+    name: Signed Android AAB
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CAPACITOR_SERVER_URL: ${{ inputs.server_url }}
+      EL_MOLINO_RELEASE_SHA: ${{ inputs.release_sha }}
+      EL_MOLINO_VERSION_NAME: ${{ inputs.version_name }}
+      EL_MOLINO_BUILD_NUMBER: ${{ inputs.build_number }}
+      EL_MOLINO_DISTRIBUTION_MODE: ${{ inputs.distribution_mode }}
+      EL_MOLINO_GOOGLE_PLAY_TRACK: ${{ inputs.google_play_track }}
       ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
       ANDROID_GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.ANDROID_GOOGLE_SERVICES_JSON_BASE64 }}
       EL_MOLINO_ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
       EL_MOLINO_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
       EL_MOLINO_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
       EL_MOLINO_ANDROID_KEYSTORE: ${{ github.workspace }}/android/app/el-molino-release.keystore
+      GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_sha }}
+          fetch-depth: 1
 
       - uses: actions/setup-node@v4
         with:
@@ -55,25 +174,27 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Validate release inputs and Android secrets
+      - name: Validate Android signing and beta credentials
         shell: bash
         run: |
           set -euo pipefail
-          node -e "const u=new URL(process.env.CAPACITOR_SERVER_URL); if(u.protocol!=='https:') throw new Error('server_url must use HTTPS')"
-          [[ "$EL_MOLINO_BUILD_NUMBER" =~ ^[1-9][0-9]*$ ]] || { echo '::error::build_number must be a positive integer'; exit 1; }
-          [[ "$EL_MOLINO_VERSION_NAME" =~ ^[0-9]+(\.[0-9]+){1,2}$ ]] || { echo '::error::version_name must contain 2 or 3 numeric components'; exit 1; }
+          test "$(git rev-parse HEAD)" = "$EL_MOLINO_RELEASE_SHA" || { echo '::error::Android checkout release identity mismatch'; exit 1; }
           for name in ANDROID_KEYSTORE_BASE64 ANDROID_GOOGLE_SERVICES_JSON_BASE64 EL_MOLINO_ANDROID_STORE_PASSWORD EL_MOLINO_ANDROID_KEY_ALIAS EL_MOLINO_ANDROID_KEY_PASSWORD; do
             if [ -z "${!name:-}" ]; then
               echo "::error::Missing required Android release secret: $name"
               exit 1
             fi
           done
+          if [ "$EL_MOLINO_DISTRIBUTION_MODE" = 'beta' ] && [ -z "${GOOGLE_PLAY_SERVICE_ACCOUNT_JSON:-}" ]; then
+            echo '::error::beta mode requires GOOGLE_PLAY_SERVICE_ACCOUNT_JSON'
+            exit 1
+          fi
 
       - name: Install locked dependencies
         run: npm ci --no-audit --no-fund
 
       - name: Sync Android native project
-        run: npm run mobile:sync:android
+        run: npm run mobile:sync -- android
 
       - name: Materialize ignored Android release credentials
         shell: bash
@@ -96,7 +217,8 @@ jobs:
           chmod +x ./gradlew
           ./gradlew --no-daemon clean bundleRelease
 
-      - name: Verify signed Android App Bundle
+      - name: Verify signed Android App Bundle and metadata
+        id: android_artifact
         shell: bash
         run: |
           set -euo pipefail
@@ -104,6 +226,14 @@ jobs:
           test -n "$AAB" && test -s "$AAB"
           jarsigner -verify -strict "$AAB"
           cp "$AAB" El-Molino-Ops-android-release.aab
+          echo "aab=El-Molino-Ops-android-release.aab" >> "$GITHUB_OUTPUT"
+          {
+            echo "Android artifact verified"
+            echo "- release SHA: \`$EL_MOLINO_RELEASE_SHA\`"
+            echo "- version: \`$EL_MOLINO_VERSION_NAME\`"
+            echo "- build/versionCode: \`$EL_MOLINO_BUILD_NUMBER\`"
+            echo "- origin: \`$CAPACITOR_SERVER_URL\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -112,20 +242,42 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Upload Android AAB to Google Play testing
+        if: ${{ inputs.distribution_mode == 'beta' }}
+        env:
+          GOOGLE_PLAY_PACKAGE_NAME: com.elmolino.ops
+          GOOGLE_PLAY_AAB_PATH: ${{ steps.android_artifact.outputs.aab }}
+        run: node scripts/release/upload-google-play.mjs
+
+      - name: Remove temporary Android signing material
+        if: always()
+        shell: bash
+        run: |
+          rm -f android/app/el-molino-release.keystore android/app/google-services.json
+
   ios-release:
     name: Signed iOS IPA
+    needs: preflight
     runs-on: macos-26
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       CAPACITOR_SERVER_URL: ${{ inputs.server_url }}
+      EL_MOLINO_RELEASE_SHA: ${{ inputs.release_sha }}
       EL_MOLINO_VERSION_NAME: ${{ inputs.version_name }}
       EL_MOLINO_BUILD_NUMBER: ${{ inputs.build_number }}
+      EL_MOLINO_DISTRIBUTION_MODE: ${{ inputs.distribution_mode }}
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64 }}
       IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
       IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+      APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+      APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+      APP_STORE_CONNECT_API_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_API_PRIVATE_KEY }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_sha }}
+          fetch-depth: 1
 
       - uses: actions/setup-node@v4
         with:
@@ -136,25 +288,31 @@ jobs:
       - name: Select supported Xcode
         run: sudo xcode-select -s /Applications/Xcode_26.6.app
 
-      - name: Validate release inputs and Apple secrets
+      - name: Validate iOS signing and beta credentials
         shell: bash
         run: |
           set -euo pipefail
-          node -e "const u=new URL(process.env.CAPACITOR_SERVER_URL); if(u.protocol!=='https:') throw new Error('server_url must use HTTPS')"
-          [[ "$EL_MOLINO_BUILD_NUMBER" =~ ^[1-9][0-9]*$ ]] || { echo '::error::build_number must be a positive integer'; exit 1; }
-          [[ "$EL_MOLINO_VERSION_NAME" =~ ^[0-9]+(\.[0-9]+){1,2}$ ]] || { echo '::error::version_name must contain 2 or 3 numeric components'; exit 1; }
+          test "$(git rev-parse HEAD)" = "$EL_MOLINO_RELEASE_SHA" || { echo '::error::iOS checkout release identity mismatch'; exit 1; }
           for name in APPLE_TEAM_ID IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64 IOS_DISTRIBUTION_CERTIFICATE_PASSWORD IOS_PROVISIONING_PROFILE_BASE64; do
             if [ -z "${!name:-}" ]; then
               echo "::error::Missing required iOS release secret: $name"
               exit 1
             fi
           done
+          if [ "$EL_MOLINO_DISTRIBUTION_MODE" = 'beta' ]; then
+            for name in APP_STORE_CONNECT_API_KEY_ID APP_STORE_CONNECT_API_ISSUER_ID APP_STORE_CONNECT_API_PRIVATE_KEY; do
+              if [ -z "${!name:-}" ]; then
+                echo "::error::beta mode requires $name"
+                exit 1
+              fi
+            done
+          fi
 
       - name: Install locked dependencies
         run: npm ci --no-audit --no-fund
 
       - name: Sync iOS native project and production origin
-        run: npm run mobile:sync:ios
+        run: npm run mobile:sync -- ios
 
       - name: Install temporary Apple signing identity and provisioning profile
         id: apple_signing
@@ -235,7 +393,8 @@ jobs:
             -exportPath "$RUNNER_TEMP/ElMolinoExport" \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
 
-      - name: Verify signed iOS artifact, privacy manifests, and production push entitlement
+      - name: Verify signed iOS artifact, privacy manifests, production push entitlement, and metadata
+        id: ios_artifact
         shell: bash
         run: |
           set -euo pipefail
@@ -253,6 +412,10 @@ jobs:
           EXPECTED_DOMAIN="$(node -e "process.stdout.write(new URL(process.env.CAPACITOR_SERVER_URL).hostname)")"
           BOUND_DOMAIN="$(/usr/libexec/PlistBuddy -c 'Print :WKAppBoundDomains:0' "$APP/Info.plist")"
           test "$BOUND_DOMAIN" = "$EXPECTED_DOMAIN" || { echo '::error::Signed app-bound domain does not match CAPACITOR_SERVER_URL'; exit 1; }
+          ACTUAL_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist")"
+          ACTUAL_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist")"
+          test "$ACTUAL_VERSION" = "$EL_MOLINO_VERSION_NAME" || { echo "::error::Signed IPA version $ACTUAL_VERSION does not match expected $EL_MOLINO_VERSION_NAME"; exit 1; }
+          test "$ACTUAL_BUILD" = "$EL_MOLINO_BUILD_NUMBER" || { echo "::error::Signed IPA build $ACTUAL_BUILD does not match expected $EL_MOLINO_BUILD_NUMBER"; exit 1; }
           PRIVACY_MANIFESTS="$RUNNER_TEMP/privacy-manifests.txt"
           find "$APP" -name PrivacyInfo.xcprivacy -type f -print > "$PRIVACY_MANIFESTS"
           test -s "$PRIVACY_MANIFESTS" || { echo '::error::Signed iOS app contains no PrivacyInfo.xcprivacy manifest'; exit 1; }
@@ -260,6 +423,15 @@ jobs:
             plutil -lint "$manifest"
           done < "$PRIVACY_MANIFESTS"
           cp "$IPA" El-Molino-Ops-ios-release.ipa
+          echo "ipa=El-Molino-Ops-ios-release.ipa" >> "$GITHUB_OUTPUT"
+          {
+            echo "iOS artifact verified"
+            echo "- release SHA: \`$EL_MOLINO_RELEASE_SHA\`"
+            echo "- version: \`$ACTUAL_VERSION\`"
+            echo "- build: \`$ACTUAL_BUILD\`"
+            echo "- origin: \`$CAPACITOR_SERVER_URL\`"
+            echo "- APNs entitlement: \`$APS_ENV\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -268,6 +440,35 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Upload iOS IPA to App Store Connect / TestFlight
+        if: ${{ inputs.distribution_mode == 'beta' }}
+        shell: bash
+        env:
+          IOS_IPA_PATH: ${{ steps.ios_artifact.outputs.ipa }}
+        run: |
+          set -euo pipefail
+          KEY_DIR="$HOME/.appstoreconnect/private_keys"
+          KEY_PATH="$KEY_DIR/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8"
+          mkdir -p "$KEY_DIR"
+          printf '%s' "$APP_STORE_CONNECT_API_PRIVATE_KEY" > "$KEY_PATH"
+          chmod 600 "$KEY_PATH"
+          test -s "$KEY_PATH"
+          UPLOAD_LOG="$RUNNER_TEMP/app-store-connect-upload.log"
+          xcrun altool \
+            --upload-app \
+            --type ios \
+            --file "$IOS_IPA_PATH" \
+            --apiKey "$APP_STORE_CONNECT_API_KEY_ID" \
+            --apiIssuer "$APP_STORE_CONNECT_API_ISSUER_ID" \
+            2>&1 | tee "$UPLOAD_LOG"
+          {
+            echo "TestFlight upload accepted by App Store Connect"
+            echo "- bundle id: \`com.elmolino.ops\`"
+            echo "- release SHA: \`$EL_MOLINO_RELEASE_SHA\`"
+            echo "- version/build: \`$EL_MOLINO_VERSION_NAME ($EL_MOLINO_BUILD_NUMBER)\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          rm -f "$KEY_PATH"
+
       - name: Remove temporary signing material
         if: always()
         shell: bash
@@ -275,3 +476,4 @@ jobs:
           security delete-keychain '${{ steps.apple_signing.outputs.keychain }}' 2>/dev/null || true
           rm -f "$HOME/Library/MobileDevice/Provisioning Profiles/${{ steps.apple_signing.outputs.profile_uuid }}.mobileprovision"
           rm -f "$RUNNER_TEMP/el-molino-distribution.p12" "$RUNNER_TEMP/el-molino.mobileprovision" "$RUNNER_TEMP/profile.plist"
+          rm -f "$HOME/.appstoreconnect/private_keys/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8"
