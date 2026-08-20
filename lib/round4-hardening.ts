@@ -32,7 +32,7 @@ export function validateBackup(value:unknown,expectedLocation?:string):BackupChe
   const errors:string[]=[],warnings:string[]=[];
   if(!value||typeof value!=='object'||Array.isArray(value))return{ok:false,errors:['Backup root must be an object.'],warnings,rowCount:0,tables:[]};
   const b=value as any;
-  if(b.format!==BACKUP_FORMAT)errors.push('Unsupported or legacy backup format. Create a new v4 backup before using full recovery.');
+  if(b.format!==BACKUP_FORMAT)errors.push('Unsupported or legacy backup format. Create a new v5 backup before using full recovery.');
   if(b.schema_version!==BACKUP_SCHEMA_VERSION)errors.push('Backup schema version does not match this recovery engine.');
   if(!validSchemaFingerprint(b.schema_fingerprint))errors.push('Backup schema fingerprint is missing or invalid.');
   if(!validIsoDate(b.exported_at))errors.push('Backup export timestamp is invalid.');
