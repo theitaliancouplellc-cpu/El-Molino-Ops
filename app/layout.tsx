@@ -5,7 +5,7 @@ import './command.css';
 import './brand.css';
 import './accessibility.css';
 import PWARegister from './pwa-register';
-import GlobalActions from './global-actions';
+import RoleGlobalActions from './role-global-actions';
 import ErrorSanitizer from './error-sanitizer';
 import AskAgentBridge from './ask-agent-bridge';
 import EmployeeRootRedirect from './employee-root-redirect';
@@ -53,7 +53,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
               <PilotUseRecorder />
               <SessionResilience />
               <NativeRuntime />
-              <GlobalActions />
+              <RoleGlobalActions />
               <AskAgentBridge />
               <div id="app-primary-content" tabIndex={-1}>{children}</div>
             </EmployeeRootRedirect>

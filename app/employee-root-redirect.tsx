@@ -4,6 +4,7 @@ import {ReactNode,useEffect,useState} from 'react';
 import {usePathname} from 'next/navigation';
 import {supabase} from '@/lib/supabase';
 import {isStaffProductPathAllowed} from '@/lib/staff-features';
+import {isManagerWorkspacePathAllowed,MANAGER_WORKSPACE_HOME} from '@/lib/manager-workspace';
 import {useI18n} from '@/lib/i18n';
 
 const PUBLIC_INFORMATION_PATHS=new Set<string>(['/privacy','/support','/delete-account']);
@@ -23,6 +24,7 @@ export default function EmployeeRootRedirect({children}:{children:ReactNode}){
  useEffect(()=>{
   let cancelled=false;
   const decide=(mode:GateMode)=>{if(!cancelled)setDecision({path:pathname,mode})};
+  const redirect=(target:string)=>{decide('redirecting');window.location.replace(target)};
   const evaluate=async()=>{
    if(publicInformationPath(pathname)){decide('pass');return}
    decide('checking');
@@ -33,7 +35,12 @@ export default function EmployeeRootRedirect({children}:{children:ReactNode}){
    if(userResult.error||!userResult.data.user){decide('error');return}
    const profileResult=await supabase.from('profiles').select('app_role').eq('id',userResult.data.user.id).maybeSingle();
    if(profileResult.error||!profileResult.data){decide('error');return}
-   if(profileResult.data.app_role!=='employee'){decide('pass');return}
+   const role=profileResult.data.app_role as 'admin'|'manager'|'employee';
+   if(role==='admin'){decide('pass');return}
+   if(role==='manager'){
+    if(pathname==='/'||pathname==='/manager'||!isManagerWorkspacePathAllowed(pathname)){redirect(MANAGER_WORKSPACE_HOME);return}
+    decide('pass');return;
+   }
    const setupResult=await supabase.rpc('employee_self_setup_status',{});
    if(setupResult.error){decide('error');return}
    const setup=(setupResult.data||{status:'not_started',access_allowed:false}) as SetupState;
@@ -46,7 +53,7 @@ export default function EmployeeRootRedirect({children}:{children:ReactNode}){
     target='/employee';
    }
    if(cancelled)return;
-   if(target&&target!==pathname){decide('redirecting');window.location.replace(target);return}
+   if(target&&target!==pathname){redirect(target);return}
    decide('pass');
   };
   void evaluate();

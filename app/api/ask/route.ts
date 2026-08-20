@@ -58,7 +58,7 @@ export async function POST(req:Request){
   try{
     const identity=await authenticatedContext(req);if(!identity)return NextResponse.json({answer:'Your session needs to be refreshed. Please try again.',citations:[]},{status:401});
     if(identity.roleError||!identity.role)return NextResponse.json({answer:'Your El Molino access could not be verified.',citations:[]},{status:403});
-    if(identity.role!=='admin'&&identity.role!=='manager')return NextResponse.json({answer:'Ask El Molino is currently available to management only.',citations:[]},{status:403});
+    if(identity.role!=='admin')return NextResponse.json({answer:'This feature is not available for your account.',citations:[]},{status:403});
     const user=identity.user;
     if(!allowed(user.id))return NextResponse.json({answer:'You’re sending messages very quickly. Wait a moment and try again.',citations:[]},{status:429});
     const declared=Number(req.headers.get('content-length')||0);if(Number.isFinite(declared)&&declared>1_000_000)return NextResponse.json({answer:'That request is too large. Ask a shorter question or process files separately.',citations:[]},{status:413});
