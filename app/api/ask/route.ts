@@ -7,6 +7,7 @@ type K = { title?:string; content?:string; status?:string; category?:string|null
 type P = { title?:string; description?:string|null; status?:string };
 type HistoryMessage = { role:'user'|'assistant'; content:string };
 type ActionProposal = { type:'task'|'procedure'|'knowledge'; title:string; description?:string; content?:string; priority?:'low'|'normal'|'high'|'urgent' };
+type AppRole='admin'|'manager'|'employee';
 
 const APP_KNOWLEDGE = `El Molino Ops is a private operations app for the Johns Island location.
 Primary navigation: Today, Work, Team, Ask AI, More.
@@ -34,13 +35,16 @@ async function readJsonBody(req:Request,maxBytes=1_000_000):Promise<{body?:any;t
   try{for(;;){const {done,value}=await reader.read();if(done)break;if(value){total+=value.byteLength;if(total>maxBytes){await reader.cancel();return {tooLarge:true};}text+=decoder.decode(value,{stream:true});}}text+=decoder.decode();return {body:text?JSON.parse(text):{}};}catch{return {invalid:true};}
 }
 
-async function authenticatedUser(req:Request){
+async function authenticatedContext(req:Request){
   const auth=req.headers.get('authorization')||'';const accessToken=auth.toLowerCase().startsWith('bearer ')?auth.slice(7).trim():'';if(!accessToken)return null;
   const url=process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anon=process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY||process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if(!url||!anon)return null;
   const client=createClient(url,anon,{global:{headers:{Authorization:`Bearer ${accessToken}`}},auth:{persistSession:false,autoRefreshToken:false}});
-  const {data,error}=await client.auth.getUser(accessToken);return error?null:data.user;
+  const {data,error}=await client.auth.getUser(accessToken);if(error||!data.user)return null;
+  const roleResult=await client.rpc('current_app_role');
+  const role=!roleResult.error&&['admin','manager','employee'].includes(String(roleResult.data||''))?roleResult.data as AppRole:null;
+  return {user:data.user,role,roleError:Boolean(roleResult.error)};
 }
 
 function detectAction(q:string):ActionProposal['type']|null{const s=q.toLowerCase();if(/\b(create|make|add|set up|draft)\b.*\b(task|to-do|todo)\b|\bremind (me|us) to\b/.test(s))return 'task';if(/\b(create|make|draft|write|build|turn .* into)\b.*\b(procedure|sop|checklist|opening checklist|closing checklist|side work)\b/.test(s))return 'procedure';if(/\b(save|add|remember|record|store)\b.*\b(knowledge|knowledge base|as knowledge|restaurant knowledge|note)\b/.test(s))return 'knowledge';return null;}
@@ -52,7 +56,10 @@ export async function GET(){return NextResponse.json({ok:true,mode:'model-first-
 
 export async function POST(req:Request){
   try{
-    const user=await authenticatedUser(req);if(!user)return NextResponse.json({answer:'Your session needs to be refreshed. Please try again.',citations:[]},{status:401});
+    const identity=await authenticatedContext(req);if(!identity)return NextResponse.json({answer:'Your session needs to be refreshed. Please try again.',citations:[]},{status:401});
+    if(identity.roleError||!identity.role)return NextResponse.json({answer:'Your El Molino access could not be verified.',citations:[]},{status:403});
+    if(identity.role!=='admin'&&identity.role!=='manager')return NextResponse.json({answer:'Ask El Molino is currently available to management only.',citations:[]},{status:403});
+    const user=identity.user;
     if(!allowed(user.id))return NextResponse.json({answer:'You’re sending messages very quickly. Wait a moment and try again.',citations:[]},{status:429});
     const declared=Number(req.headers.get('content-length')||0);if(Number.isFinite(declared)&&declared>1_000_000)return NextResponse.json({answer:'That request is too large. Ask a shorter question or process files separately.',citations:[]},{status:413});
     const parsedBody=await readJsonBody(req);if(parsedBody.tooLarge)return NextResponse.json({answer:'That request is too large. Ask a shorter question or process files separately.',citations:[]},{status:413});if(parsedBody.invalid)return NextResponse.json({answer:'I could not read that request. Please send the message again.',citations:[],degraded:true},{status:200});const body=parsedBody.body||{};
