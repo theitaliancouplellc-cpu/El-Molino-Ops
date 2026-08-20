@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 
 const schema=readFileSync('docs/database/employee_support_reports_v1.sql','utf8');
 const hardening=readFileSync('docs/database/employee_support_reports_v1_1.sql','utf8');
+const rlsOptimization=readFileSync('docs/database/employee_support_reports_v1_2.sql','utf8');
 const recovery=readFileSync('docs/database/backup_recovery_employee_support_v1.sql','utf8');
 const ask=readFileSync('app/api/ask/route.ts','utf8');
 const backup=readFileSync('lib/backup-manifest.ts','utf8');
@@ -30,6 +31,16 @@ test('support reports are durable, RLS-protected, and direct Staff mutations are
   assert.match(schema,/employee_support_reports_manager_read/);
   assert.match(schema,/location_id=public\.current_location_id\(\)/);
   assert.match(schema,/public\.current_app_role\(\) in \('admin','manager'\)/);
+});
+
+test('support manager-read RLS keeps authorization semantics while caching stable identity predicates',()=>{
+  assert.match(rlsOptimization,/drop policy if exists employee_support_reports_manager_read/);
+  assert.match(rlsOptimization,/create policy employee_support_reports_manager_read/);
+  assert.match(rlsOptimization,/for select to authenticated/);
+  assert.match(rlsOptimization,/\(select auth\.uid\(\)\) is not null/);
+  assert.match(rlsOptimization,/location_id=\(select public\.current_location_id\(\)\)/);
+  assert.match(rlsOptimization,/\(select public\.current_app_role\(\)\) in \('admin','manager'\)/);
+  assert.doesNotMatch(rlsOptimization,/for insert|for update|for delete/i);
 });
 
 test('Staff support submission derives identity and employment state from authoritative server context',()=>{
