@@ -16,11 +16,16 @@ const hiddenProductCopy=/\btraining\b|time[- ]?clock|\btips?\b|\bpayroll\b|\bwag
 
 test('Staff tutorials are released through one exact route while hidden product domains remain closed',()=>{
  assert.equal(STAFF_FEATURES.tutorials,true);
- for(const feature of ['systemChannels','support','training','timeClock','tips','earnings','financialFeatures','toastFeatures'] as const)assert.equal(STAFF_FEATURES[feature],false,feature);
+ assert.equal(STAFF_FEATURES.support,true);
+ for(const feature of ['systemChannels','training','timeClock','tips','earnings','financialFeatures','toastFeatures'] as const)assert.equal(STAFF_FEATURES[feature],false,feature);
  assert.equal(staffRouteFeature('/employee/tutorials'),'tutorials');
  assert.equal(isStaffRouteReleased('/employee/tutorials'),true);
  assert.equal(staffRouteFeature('/employee/tutorials/internal'),null);
  assert.equal(isStaffRouteReleased('/employee/tutorials/internal'),false);
+ assert.equal(staffRouteFeature('/employee/support'),'support');
+ assert.equal(isStaffRouteReleased('/employee/support'),true);
+ assert.equal(staffRouteFeature('/employee/support/internal'),null);
+ assert.equal(isStaffRouteReleased('/employee/support/internal'),false);
 });
 
 test('guided tour is on-demand, local-only, and mounted behind the Staff release boundary',()=>{
