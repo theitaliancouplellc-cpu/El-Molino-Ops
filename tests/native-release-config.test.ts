@@ -7,20 +7,37 @@ const canonicalOrigin = 'https://el-molino-ops.el-molino-ops-7537172ca8.workers.
 
 test('native release defaults to canonical production and gates beta distribution on exact release evidence', async () => {
   const workflow = await readFile('.github/workflows/native-release.yml', 'utf8');
+  const releaseShaStart = workflow.indexOf('      release_sha:');
+  const serverUrlStart = workflow.indexOf('      server_url:');
+  const releaseShaInput = workflow.slice(releaseShaStart, serverUrlStart);
 
   assert.ok(workflow.includes(`default: ${canonicalOrigin}`));
   assert.ok(!workflow.includes('el-molino-ops.vercel.app'));
+  assert.ok(releaseShaStart >= 0 && serverUrlStart > releaseShaStart);
+  assert.ok(!releaseShaInput.includes('default:'), 'release_sha must be supplied explicitly; a static default becomes stale after the next merge');
   assert.ok(workflow.includes('distribution_mode:'));
   assert.ok(workflow.includes('- artifact-only'));
   assert.ok(workflow.includes('- beta'));
   assert.ok(workflow.includes('ref: ${{ inputs.release_sha }}'));
   assert.ok(workflow.includes('Verify canonical production reports requested release'));
+  assert.ok(workflow.includes('const productionSha = health.release?.sha;'));
+  assert.ok(!workflow.includes('health.releaseSha'));
   assert.ok(workflow.includes('GOOGLE_PLAY_SERVICE_ACCOUNT_JSON'));
   assert.ok(workflow.includes('APP_STORE_CONNECT_API_PRIVATE_KEY'));
   assert.ok(workflow.includes('npm run mobile:sync -- android'));
   assert.ok(workflow.includes('npm run mobile:sync -- ios'));
   assert.ok(!workflow.includes('mobile:sync:android'));
   assert.ok(!workflow.includes('mobile:sync:ios'));
+});
+
+test('native beta preflight consumes the production health route release schema', async () => {
+  const workflow = await readFile('.github/workflows/native-release.yml', 'utf8');
+  const healthRoute = await readFile('app/api/health/route.ts', 'utf8');
+
+  assert.ok(healthRoute.includes('const release = releaseMetadata();'));
+  assert.ok(healthRoute.includes('      release,'));
+  assert.ok(healthRoute.includes("'x-el-molino-release': release.sha"));
+  assert.ok(workflow.includes('health.release?.sha'));
 });
 
 test('Capacitor iOS sync fallback uses canonical Cloudflare production origin', async () => {
