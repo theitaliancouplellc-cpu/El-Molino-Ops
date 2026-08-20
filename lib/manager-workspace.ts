@@ -11,7 +11,6 @@ const MANAGER_EXACT_PATHS = new Set<string>([
   '/employee/team',
   '/employee/notifications',
   '/employee/notifications/preferences',
-  '/employee/more',
   '/employee/support',
   '/account',
   '/privacy',
