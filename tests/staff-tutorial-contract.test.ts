@@ -5,6 +5,7 @@ import {STAFF_FEATURES,isStaffRouteReleased,staffRouteFeature} from '../lib/staf
 
 const tour=readFileSync('app/employee/staff-tour.tsx','utf8');
 const tourCss=readFileSync('app/employee/staff-tour.module.css','utf8');
+const mobilePolish=readFileSync('app/employee/mobile-polish.css','utf8');
 const tutorialPage=readFileSync('app/employee/tutorials/page.tsx','utf8');
 const layout=readFileSync('app/employee/layout.tsx','utf8');
 const home=readFileSync('app/employee/page.tsx','utf8');
@@ -52,7 +53,7 @@ test('guided tour supplies keyboard, focus, progress and reduced-motion affordan
  assert.match(tour,/prefers-reduced-motion: reduce/);
  assert.match(tourCss,/min-height:44px/);
  assert.match(tourCss,/@media\(prefers-reduced-motion:reduce\)/);
- assert.match(tourCss,/data-staff-tour-active/);
+ assert.match(mobilePolish,/\.employee-shell \[data-staff-tour-active="true"\]/);
 });
 
 test('tutorial center and More expose only released Staff destinations and no hidden capability copy',()=>{
