@@ -6,7 +6,6 @@ on:
       release_sha:
         description: Exact 40-character production commit SHA to package
         required: true
-        default: 890c0cef3b3454c986764d7977d1cf90143a5bbd
         type: string
       server_url:
         description: HTTPS production origin embedded in the native apps
@@ -104,8 +103,9 @@ jobs:
           HEALTH_JSON="$HEALTH_JSON" node <<'NODE'
           const health = JSON.parse(process.env.HEALTH_JSON);
           if (health.ok !== true) throw new Error('canonical production health did not report ok=true');
-          if (health.releaseSha !== process.env.EL_MOLINO_RELEASE_SHA) {
-            throw new Error(`canonical production release ${health.releaseSha ?? '<missing>'} does not match requested ${process.env.EL_MOLINO_RELEASE_SHA}`);
+          const productionSha = health.release?.sha;
+          if (productionSha !== process.env.EL_MOLINO_RELEASE_SHA) {
+            throw new Error(`canonical production release ${productionSha ?? '<missing>'} does not match requested ${process.env.EL_MOLINO_RELEASE_SHA}`);
           }
           NODE
           RELEASE_HEADER="$(tr -d '\r' < "$HEALTH_HEADERS" | awk -F': ' 'tolower($1)=="x-el-molino-release"{print $2}' | tail -n1)"
