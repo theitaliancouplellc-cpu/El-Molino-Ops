@@ -1,6 +1,6 @@
 'use client';
 
-import {Bell,BookOpen,CalendarDays,Clock3,Home,Languages,MessageSquare,Settings,ShieldCheck,UserRound} from 'lucide-react';
+import {Bell,BookOpen,CalendarDays,CircleHelp,Clock3,Home,Languages,MessageSquare,Settings,ShieldCheck,UserRound} from 'lucide-react';
 import {LanguageToggle,useI18n} from '@/lib/i18n';
 import {staffFeatureEnabled} from '@/lib/staff-features';
 import styles from '../employee.module.css';
@@ -8,9 +8,9 @@ import styles from '../employee.module.css';
 export default function EmployeeMorePage(){
  const {locale,t}=useI18n();
  const c=locale==='es'?{
-  title:'Más',body:'Tu equipo, notificaciones, guía, idioma y cuenta.',team:'Equipo',teamBody:'Personas, anuncios y contacto con gerencia.',notificationsBody:'Cambios de horario, solicitudes y novedades del equipo.',preferences:'Preferencias de notificaciones',preferencesBody:'Elige cómo quieres recibir las actualizaciones disponibles.',account:'Cuenta y seguridad',accountBody:'Perfil, puestos verificados, correo y contraseña.',tutorials:'Guía de la aplicación',tutorialsBody:'Un recorrido corto por las herramientas disponibles para el equipo.',language:'Idioma',languageBody:'Cambia el idioma de la aplicación.'
+  title:'Más',body:'Tu equipo, notificaciones, ayuda, guía, idioma y cuenta.',team:'Equipo',teamBody:'Personas, anuncios y contacto con gerencia.',notificationsBody:'Cambios de horario, solicitudes y novedades del equipo.',preferences:'Preferencias de notificaciones',preferencesBody:'Elige cómo quieres recibir las actualizaciones disponibles.',support:'Ayuda y reportar un problema',supportBody:'Consulta ayuda o envía un reporte seguro si algo no funciona.',account:'Cuenta y seguridad',accountBody:'Perfil, puestos verificados, correo y contraseña.',tutorials:'Guía de la aplicación',tutorialsBody:'Un recorrido corto por las herramientas disponibles para el equipo.',language:'Idioma',languageBody:'Cambia el idioma de la aplicación.'
  }:{
-  title:'More',body:'Your team, notifications, app guide, language and account.',team:'Team',teamBody:'People, announcements and manager contact.',notificationsBody:'Schedule changes, request updates and team activity.',preferences:'Notification preferences',preferencesBody:'Choose how you receive available updates.',account:'Account & Security',accountBody:'Profile, verified positions, email and password.',tutorials:'App guide',tutorialsBody:'A short walkthrough of the tools currently available to Staff.',language:'Language',languageBody:'Change the app language.'
+  title:'More',body:'Your team, notifications, help, app guide, language and account.',team:'Team',teamBody:'People, announcements and manager contact.',notificationsBody:'Schedule changes, request updates and team activity.',preferences:'Notification preferences',preferencesBody:'Choose how you receive available updates.',support:'Help & report a problem',supportBody:'Get help or send a safe problem report when something is not working.',account:'Account & Security',accountBody:'Profile, verified positions, email and password.',tutorials:'App guide',tutorialsBody:'A short walkthrough of the tools currently available to Staff.',language:'Language',languageBody:'Change the app language.'
  };
  return <main className={styles.page}>
   <header className={styles.header}><div className={styles.brand}><small>El Molino · Johns Island</small><strong>{c.title}</strong></div></header>
@@ -19,6 +19,7 @@ export default function EmployeeMorePage(){
    <a className={styles.row} href="/employee/team"><MessageSquare size={19}/><span className={styles.rowMain}><b>{c.team}</b><small>{c.teamBody}</small></span></a>
    <a className={styles.row} href="/employee/notifications"><Bell size={19}/><span className={styles.rowMain}><b>{t('nav.notifications')}</b><small>{c.notificationsBody}</small></span></a>
    <a className={styles.row} href="/employee/notifications/preferences"><Settings size={19}/><span className={styles.rowMain}><b>{c.preferences}</b><small>{c.preferencesBody}</small></span></a>
+   {staffFeatureEnabled('support')&&<a className={styles.row} href="/employee/support"><CircleHelp size={19}/><span className={styles.rowMain}><b>{c.support}</b><small>{c.supportBody}</small></span></a>}
    {staffFeatureEnabled('tutorials')&&<a className={styles.row} href="/employee/tutorials"><BookOpen size={19}/><span className={styles.rowMain}><b>{c.tutorials}</b><small>{c.tutorialsBody}</small></span></a>}
    <a className={styles.row} href="/account"><ShieldCheck size={19}/><span className={styles.rowMain}><b>{c.account}</b><small>{c.accountBody}</small></span></a>
   </div></section>
