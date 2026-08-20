@@ -1,5 +1,5 @@
-export const BACKUP_FORMAT='el-molino-ops-backup-v4' as const;
-export const BACKUP_SCHEMA_VERSION=4 as const;
+export const BACKUP_FORMAT='el-molino-ops-backup-v5' as const;
+export const BACKUP_SCHEMA_VERSION=5 as const;
 export const BACKUP_MAX_TABLE_ROWS=100_000;
 export const BACKUP_MAX_TOTAL_ROWS=500_000;
 export const BACKUP_MAX_FILE_BYTES=50*1024*1024;
@@ -9,7 +9,7 @@ export const BACKUP_CHUNK_ROWS=250;
 // and to the backup contract test before an export can claim to be complete.
 export const BACKUP_TABLES=[
   'locations','profiles',
-  'employee_roles','employees','employee_role_assignments','employee_employment_status_history','employee_role_change_requests','employee_role_change_request_roles','employee_role_assignment_history','employee_self_setup_claims','employee_self_setup_role_claims','employee_schedule_profiles','employee_availability','employee_availability_overrides','availability_change_requests','employee_compliance_profiles',
+  'employee_roles','employees','employee_role_assignments','employee_employment_status_history','employee_role_change_requests','employee_role_change_request_roles','employee_role_assignment_history','employee_self_setup_claims','employee_self_setup_role_claims','employee_schedule_profiles','employee_availability','employee_availability_overrides','availability_change_requests','employee_compliance_profiles','employee_support_reports',
   'areas','stations',
   'knowledge_sources','knowledge_items','procedures','procedure_steps',
   'checklist_templates','checklist_template_items','checklist_runs','checklist_run_items',

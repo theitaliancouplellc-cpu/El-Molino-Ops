@@ -35,7 +35,7 @@ test('120 natural messages are delegated to the model rather than phrase handler
 
 test('Ask AI model-first source contracts preserve safety without scripted conversation',()=>{
   const contracts:[RegExp,string][]=[
-    [/authenticatedUser\(req\)/,'requires authenticated user'],
+    [/authenticatedContext\(req\)/,'requires authenticated server context'],
     [/status:429/,'rate limit exists'],
     [/1_000_000/,'request body limit exists'],
     [/verifiedStatus/,'knowledge approval filter exists'],
