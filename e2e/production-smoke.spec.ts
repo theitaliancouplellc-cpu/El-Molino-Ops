@@ -50,6 +50,28 @@ test('root authentication shell switches to Spanish and persists the locale', as
   await expect(page.locator('html')).toHaveAttribute('lang', 'es');
 });
 
+test('keyboard entry, focus visibility, and sign-in labels are programmatically accessible', async ({ page }) => {
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('heading', { name: 'El Molino Ops' })).toBeVisible();
+
+  await expect(page.getByLabel(/Email|Correo electrónico/)).toBeVisible();
+  await expect(page.getByLabel(/Password|Contraseña/)).toBeVisible();
+
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press('Tab');
+  const skip = page.locator('.skip-link');
+  await expect(skip).toBeFocused();
+  const focusStyle = await skip.evaluate((node) => {
+    const style = getComputedStyle(node);
+    return { outline: style.outlineStyle, width: Number.parseFloat(style.outlineWidth || '0') };
+  });
+  expect(focusStyle.outline).not.toBe('none');
+  expect(focusStyle.width).toBeGreaterThan(0);
+
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#app-primary-content')).toBeFocused();
+});
+
 test('PWA manifest and service worker are production-valid', async ({ request }) => {
   const manifestResponse = await request.get('/manifest.webmanifest');
   expect(manifestResponse.ok()).toBe(true);

@@ -1,0 +1,28 @@
+/* Keyboard and focus affordances shared by the public, admin, and Staff shells. */
+.skip-link{
+ position:fixed;
+ top:8px;
+ left:8px;
+ z-index:10000;
+ max-width:calc(100vw - 16px);
+ padding:10px 14px;
+ border:2px solid currentColor;
+ border-radius:10px;
+ background:var(--surface,#fff);
+ color:var(--ink,#171713);
+ font-weight:800;
+ transform:translateY(calc(-100% - 16px));
+ transition:transform .12s ease;
+}
+.skip-link:focus-visible{transform:translateY(0)}
+
+:where(a,button,input,textarea,select,[tabindex]):focus-visible{
+ outline:3px solid var(--gold,#c59b4d);
+ outline-offset:3px;
+}
+
+#app-primary-content:focus{outline:none}
+
+@media(prefers-reduced-motion:reduce){
+ .skip-link{transition:none}
+}
