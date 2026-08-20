@@ -6,6 +6,11 @@ const schema=readFileSync('docs/database/employee_support_reports_v1.sql','utf8'
 const recovery=readFileSync('docs/database/backup_recovery_employee_support_v1.sql','utf8');
 const ask=readFileSync('app/api/ask/route.ts','utf8');
 const backup=readFileSync('lib/backup-manifest.ts','utf8');
+const page=readFileSync('app/employee/support/page.tsx','utf8');
+const managerPage=readFileSync('app/admin/support/page.tsx','utf8');
+const admin=readFileSync('app/admin/page.tsx','utf8');
+const more=readFileSync('app/employee/more/page.tsx','utf8');
+const features=readFileSync('lib/staff-features.ts','utf8');
 
 test('management Ask authorization is derived server-side from the authenticated database role',()=>{
   assert.match(ask,/client\.rpc\('current_app_role'\)/);
@@ -46,6 +51,25 @@ test('support submission retries are content-aware and cannot reuse an id for ch
   assert.match(schema,/existing\.request_fingerprint<>fingerprint/);
   assert.match(schema,/request id already used for different report/);
   assert.match(schema,/'deduplicated',true/);
+  assert.match(page,/pending\.current\?\?\{id:crypto\.randomUUID\(\),diagnostics:diagnosticSnapshot\(\)\}/);
+  assert.match(page,/pending\.current=attempt/);
+  assert.match(page,/function invalidateAttempt\(\)\{pending\.current=null\}/);
+  assert.match(page,/setCategory\(e\.target\.value as Category\);invalidateAttempt\(\)/);
+  assert.match(page,/setSummary\(e\.target\.value\);invalidateAttempt\(\)/);
+  assert.match(page,/setDescription\(e\.target\.value\);invalidateAttempt\(\)/);
+});
+
+test('Staff support UI stays deterministic, privacy-bounded, and does not call Ask AI',()=>{
+  assert.match(page,/submit_employee_support_report/);
+  assert.match(page,/my_employee_support_reports/);
+  assert.match(page,/employee_self_setup_status/);
+  assert.match(page,/window\.location\.pathname/);
+  assert.match(page,/fetch\('\/api\/health'/);
+  assert.match(page,/Do not include passwords, verification codes, API keys, push tokens, payroll\/HR information/);
+  assert.match(page,/URL parameters and credentials are not sent/);
+  assert.doesNotMatch(page,/\/api\/ask/);
+  assert.doesNotMatch(page,/window\.location\.(?:search|href)/);
+  assert.doesNotMatch(page,/navigator\.clipboard|localStorage|sessionStorage/);
 });
 
 test('manager review and listing remain same-location and role-gated',()=>{
@@ -55,6 +79,10 @@ test('manager review and listing remain same-location and role-gated',()=>{
   assert.match(schema,/where r\.location_id=loc/);
   assert.match(schema,/where id=p_report_id and location_id=loc/);
   assert.match(schema,/status_value not in \('open','acknowledged','resolved','closed'\)/);
+  assert.match(managerPage,/employee_support_reports_for_manager/);
+  assert.match(managerPage,/review_employee_support_report/);
+  assert.match(managerPage,/\['admin','manager'\]\.includes\(appRole\)/);
+  assert.match(admin,/href="\/admin\/support"/);
 });
 
 test('support RPCs revoke PUBLIC and anon execution and grant only authenticated callers',()=>{
@@ -64,9 +92,18 @@ test('support RPCs revoke PUBLIC and anon execution and grant only authenticated
   }
 });
 
-test('support reports are included in both browser and server recovery contracts',()=>{
+test('support reports are included in a coherent browser and server recovery v5 contract',()=>{
   assert.match(backup,/BACKUP_FORMAT='el-molino-ops-backup-v5'/);
   assert.match(backup,/BACKUP_SCHEMA_VERSION=5/);
   assert.match(backup,/employee_support_reports/);
   assert.match(recovery,/employee_support_reports/);
+  assert.match(recovery,/p_format<>'el-molino-ops-backup-v5' or p_schema_version<>5/);
+  assert.doesNotMatch(recovery,/el-molino-ops-backup-v4|p_schema_version<>4/);
+});
+
+test('Staff support is released only as one exact route and is discoverable from More',()=>{
+  assert.match(features,/support:\s*true/);
+  assert.match(features,/\{path: '\/employee\/support', feature: 'support'\}/);
+  assert.match(more,/staffFeatureEnabled\('support'\)/);
+  assert.match(more,/href="\/employee\/support"/);
 });
