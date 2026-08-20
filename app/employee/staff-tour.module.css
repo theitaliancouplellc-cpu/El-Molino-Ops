@@ -25,14 +25,6 @@
 .actions button:disabled{opacity:.42;cursor:not-allowed}
 .hint{display:block;margin-top:10px;font-size:.76rem;opacity:.68}
 
-:global([data-staff-tour-active="true"]){
- outline:4px solid var(--gold,#c59b4d)!important;
- outline-offset:5px!important;
- position:relative;
- z-index:11001;
- scroll-margin-block:150px;
-}
-
 @media(max-width:520px){
  .panel{bottom:calc(78px + env(safe-area-inset-bottom));padding:14px;border-radius:16px}
  .panel h2{font-size:1.08rem}
