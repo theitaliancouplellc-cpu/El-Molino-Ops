@@ -48,27 +48,33 @@ test('release provenance rejects direct, unsigned, non-merge, fork and mismatche
   assert.match(verifier,/eligible\.length !== 1/);
 });
 
-test('release provenance requires latest exact-head and exact-branch success from all three certified PR gates',()=>{
+test('release provenance requires latest completed pre-merge exact-head evidence from all three certified PR gates',()=>{
   assert.match(verifier,/file: 'ci\.yml', name: 'El Molino Ops CI'/);
   assert.match(verifier,/file: 'mobile-ci\.yml', name: 'El Molino Ops Mobile CI'/);
   assert.match(verifier,/file: 'cloudflare-staging-certification\.yml', name: 'Cloudflare Staging Certification'/);
+  assert.match(verifier,/const mergedAt = Date\.parse\(pr\.merged_at\)/);
+  assert.match(verifier,/Number\.isFinite\(mergedAt\)/);
   assert.match(verifier,/head_sha: certifiedHead/);
   assert.match(verifier,/event: 'pull_request'/);
   assert.match(verifier,/run\?\.head_sha === certifiedHead/);
   assert.match(verifier,/run\?\.head_branch === pr\.head\.ref/);
   assert.match(verifier,/run\?\.event === 'pull_request'/);
   assert.match(verifier,/run\?\.name === requirement\.name/);
+  assert.match(verifier,/const completedEvidenceAt = Date\.parse\(run\?\.updated_at \|\| ''\)/);
+  assert.match(verifier,/Number\.isFinite\(completedEvidenceAt\)/);
+  assert.match(verifier,/completedEvidenceAt <= mergedAt/);
   assert.doesNotMatch(verifier,/run\.pull_requests/);
   assert.match(verifier,/sort\(\(a, b\) => Number\(b\.id \|\| 0\) - Number\(a\.id \|\| 0\)\)/);
   assert.match(verifier,/latest\.status !== 'completed' \|\| latest\.conclusion !== 'success'/);
-  assert.match(verifier,/has no exact-head pull-request run/);
-  assert.match(verifier,/latest exact-head run is not successful/);
+  assert.match(verifier,/has no exact-head pre-merge pull-request run/);
+  assert.match(verifier,/latest pre-merge exact-head run is not successful/);
 });
 
-test('missing or indeterminate GitHub evidence fails closed rather than becoming a release approval',()=>{
+test('missing, post-merge or indeterminate GitHub evidence fails closed rather than becoming a release approval',()=>{
   assert.match(verifier,/if \(!response\.ok\) fail/);
   assert.match(verifier,/if \(!token\) fail/);
   assert.match(verifier,/if \(!latest\) fail/);
+  assert.match(verifier,/completedEvidenceAt <= mergedAt/);
   assert.doesNotMatch(verifier,/conclusion === 'neutral'/);
   assert.doesNotMatch(verifier,/conclusion === 'skipped'/);
   assert.doesNotMatch(verifier,/continue-on-error/);

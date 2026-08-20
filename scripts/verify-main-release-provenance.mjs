@@ -51,6 +51,8 @@ const eligible = (Array.isArray(associated) ? associated : []).filter((pr) =>
 );
 if (eligible.length !== 1) fail(`Expected exactly one merged same-repository PR for target SHA; found ${eligible.length}`);
 const pr = eligible[0];
+const mergedAt = Date.parse(pr.merged_at);
+if (!Number.isFinite(mergedAt)) fail(`Merged PR #${pr.number} has an invalid merge timestamp`);
 
 for (const requirement of requiredWorkflows) {
   const query = new URLSearchParams({
@@ -60,19 +62,22 @@ for (const requirement of requiredWorkflows) {
   });
   const data = await github(`/repos/${repo}/actions/workflows/${requirement.file}/runs?${query}`, token);
   const matching = (data.workflow_runs || [])
-    .filter((run) =>
-      run?.head_sha === certifiedHead &&
-      run?.head_branch === pr.head.ref &&
-      run?.event === 'pull_request' &&
-      run?.name === requirement.name
-    )
+    .filter((run) => {
+      const completedEvidenceAt = Date.parse(run?.updated_at || '');
+      return run?.head_sha === certifiedHead &&
+        run?.head_branch === pr.head.ref &&
+        run?.event === 'pull_request' &&
+        run?.name === requirement.name &&
+        Number.isFinite(completedEvidenceAt) &&
+        completedEvidenceAt <= mergedAt;
+    })
     .sort((a, b) => Number(b.id || 0) - Number(a.id || 0));
   const latest = matching[0];
-  if (!latest) fail(`${requirement.name} has no exact-head pull-request run for PR #${pr.number}`);
+  if (!latest) fail(`${requirement.name} has no exact-head pre-merge pull-request run for PR #${pr.number}`);
   if (latest.status !== 'completed' || latest.conclusion !== 'success') {
-    fail(`${requirement.name} latest exact-head run is not successful (status=${latest.status || 'missing'}, conclusion=${latest.conclusion || 'missing'})`);
+    fail(`${requirement.name} latest pre-merge exact-head run is not successful (status=${latest.status || 'missing'}, conclusion=${latest.conclusion || 'missing'})`);
   }
-  console.log(`${requirement.name}: PASS run ${latest.id}`);
+  console.log(`${requirement.name}: PASS pre-merge run ${latest.id}`);
 }
 
 console.log(`Release provenance: PASS PR #${pr.number} head ${certifiedHead} -> merge ${target}`);
