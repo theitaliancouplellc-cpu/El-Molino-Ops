@@ -85,6 +85,20 @@ test('production Cloudflare release gates the exact main SHA on its dedicated Wo
   assert.doesNotMatch(production,/wrangler deploy --env release_gate --name "\$PRODUCTION_WORKER"/);
 });
 
+test('production runtime-tail probes tolerate propagation delay but remain exact-identity and fail-closed',()=>{
+  assert.match(production,/wrangler tail "\$STAGING_WORKER" --env release_gate --format json --method GET/);
+  assert.match(production,/kill -0 "\$TAIL_PID"/);
+  assert.match(production,/successful_probes=0/);
+  assert.match(production,/for i in \{1\.\.8\}/);
+  assert.match(production,/for attempt in \{1\.\.10\}/);
+  assert.match(production,/audit=release-\$i-\$GITHUB_RUN_ID&release=\$TARGET_SHA&attempt=\$attempt/);
+  assert.match(production,/\[ "\$CODE" = 200 \] && \[ "\$BODY_SHA" = "\$TARGET_SHA" \] && \[ "\$HEADER_SHA" = "\$TARGET_SHA" \]/);
+  assert.match(production,/test "\$probe_ok" = true/);
+  assert.match(production,/test "\$successful_probes" -eq 8/);
+  assert.match(production,/runtime-tail gate failed/);
+  assert.doesNotMatch(production,/for i in \{1\.\.8\}; do curl -fsS/);
+});
+
 test('canonical release documentation preserves single-writer and data-safety caveats',()=>{
   assert.match(contract,/Cloudflare Workers is the canonical web runtime/);
   assert.match(contract,/Only one system may be authoritative for production publication/);

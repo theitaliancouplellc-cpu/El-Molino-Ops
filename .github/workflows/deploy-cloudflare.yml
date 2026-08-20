@@ -172,7 +172,7 @@ jobs:
           URL="$(cat /tmp/cf-staging-url)"
           : > /tmp/cf-tail.json
           : > /tmp/cf-tail.err
-          npx wrangler tail "$STAGING_WORKER" --format json --method GET > /tmp/cf-tail.json 2>/tmp/cf-tail.err &
+          npx wrangler tail "$STAGING_WORKER" --env release_gate --format json --method GET > /tmp/cf-tail.json 2>/tmp/cf-tail.err &
           TAIL_PID=$!
           cleanup_tail() {
             kill -INT "$TAIL_PID" 2>/dev/null || true
@@ -182,7 +182,28 @@ jobs:
           }
           trap cleanup_tail EXIT
           sleep 10
-          for i in {1..8}; do curl -fsS "$URL/api/health?audit=release-$i-$GITHUB_RUN_ID" >/dev/null; sleep 1; done
+          kill -0 "$TAIL_PID" 2>/dev/null || { echo '::error::Release-gate tail session exited before probes'; cat /tmp/cf-tail.err || true; exit 1; }
+
+          successful_probes=0
+          for i in {1..8}; do
+            probe_ok=false
+            for attempt in {1..10}; do
+              CODE="$(curl -sS -D "/tmp/cf-tail-health-${i}.headers" -o "/tmp/cf-tail-health-${i}.json" -w '%{http_code}' -H 'Cache-Control: no-cache, no-store, max-age=0' "$URL/api/health?audit=release-$i-$GITHUB_RUN_ID&release=$TARGET_SHA&attempt=$attempt" || true)"
+              HEADER_SHA="$(awk -F': ' 'tolower($1)=="x-el-molino-release" {gsub("\r",""); print $2}' "/tmp/cf-tail-health-${i}.headers" 2>/dev/null | tail -1)"
+              BODY_SHA="$(node -e "try{const h=JSON.parse(require('fs').readFileSync('/tmp/cf-tail-health-${i}.json','utf8'));process.stdout.write(h.release?.sha||'')}catch{}")"
+              if [ "$CODE" = 200 ] && [ "$BODY_SHA" = "$TARGET_SHA" ] && [ "$HEADER_SHA" = "$TARGET_SHA" ]; then
+                probe_ok=true
+                successful_probes=$((successful_probes+1))
+                break
+              fi
+              echo "Runtime-tail probe $i not ready (attempt $attempt): status=${CODE:-none} body=${BODY_SHA:-none} header=${HEADER_SHA:-none}"
+              sleep 2
+            done
+            test "$probe_ok" = true || { echo "::error::Runtime-tail probe $i never reached exact release identity"; exit 1; }
+            sleep 1
+          done
+          test "$successful_probes" -eq 8 || { echo "::error::Expected 8 exact-identity runtime-tail probes, saw $successful_probes"; exit 1; }
+
           sleep 10
           cleanup_tail
           trap - EXIT
