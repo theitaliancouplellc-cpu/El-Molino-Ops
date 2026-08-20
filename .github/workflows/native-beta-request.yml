@@ -192,14 +192,7 @@ jobs:
               --header 'X-GitHub-Api-Version: 2022-11-28' \
               "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/native-release.yml/runs?event=workflow_dispatch&branch=main&per_page=30" > "$RUNS_JSON"
 
-            MATCH="$(RUNS_JSON="$RUNS_JSON" DISPATCHED_AT="$DISPATCHED_AT" node <<'NODE'
-            const fs=require('fs');
-            const runs=JSON.parse(fs.readFileSync(process.env.RUNS_JSON,'utf8')).workflow_runs||[];
-            const floor=Date.parse(process.env.DISPATCHED_AT)-5000;
-            const run=runs.find(r=>r.head_sha===process.env.RELEASE_SHA && Date.parse(r.created_at)>=floor);
-            if(run) process.stdout.write(`${run.id}|${run.html_url}`);
-            NODE
-            )"
+            MATCH="$(RUNS_JSON="$RUNS_JSON" DISPATCHED_AT="$DISPATCHED_AT" RELEASE_SHA="$RELEASE_SHA" node -e 'const fs=require("fs");const runs=JSON.parse(fs.readFileSync(process.env.RUNS_JSON,"utf8")).workflow_runs||[];const floor=Date.parse(process.env.DISPATCHED_AT)-5000;const run=runs.find(r=>r.head_sha===process.env.RELEASE_SHA&&Date.parse(r.created_at)>=floor);if(run)process.stdout.write(`${run.id}|${run.html_url}`);')"
 
             if [ -n "$MATCH" ]; then
               native_run_id="${MATCH%%|*}"
@@ -215,14 +208,6 @@ jobs:
           echo "run_id=$native_run_id" >> "$GITHUB_OUTPUT"
           echo "run_url=$native_run_url" >> "$GITHUB_OUTPUT"
 
-          node <<'NODE' > "$RUNNER_TEMP/native-beta-status.json"
-          process.stdout.write(JSON.stringify({
-            state: 'pending',
-            context: process.env.STATUS_CONTEXT,
-            description: 'Native beta build/store upload is running',
-            target_url: process.env.NATIVE_RUN_URL,
-          }));
-          NODE
           NATIVE_RUN_URL="$native_run_url" node <<'NODE' > "$RUNNER_TEMP/native-beta-status.json"
           process.stdout.write(JSON.stringify({
             state: 'pending',
@@ -305,3 +290,24 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
           test "$conclusion" = 'success' || { echo "::error::Native beta distribution run concluded $conclusion"; exit 1; }
+
+      - name: Publish failed native beta orchestration status
+        if: ${{ failure() && steps.result.outcome != 'failure' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE' > "$RUNNER_TEMP/native-beta-status.json"
+          process.stdout.write(JSON.stringify({
+            state: 'failure',
+            context: process.env.STATUS_CONTEXT,
+            description: 'Native beta orchestration failed before store result was recorded',
+            target_url: `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,
+          }));
+          NODE
+          curl --fail --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header 'Accept: application/vnd.github+json' \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${RELEASE_SHA}" \
+            --data-binary @"$RUNNER_TEMP/native-beta-status.json" >/dev/null
