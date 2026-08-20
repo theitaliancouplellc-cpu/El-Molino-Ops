@@ -3,6 +3,7 @@ import './globals.css';
 import './extra.css';
 import './command.css';
 import './brand.css';
+import './accessibility.css';
 import PWARegister from './pwa-register';
 import GlobalActions from './global-actions';
 import ErrorSanitizer from './error-sanitizer';
@@ -13,6 +14,7 @@ import ProductionTelemetry from './production-telemetry';
 import SessionResilience from './session-resilience';
 import NativeRuntime from './native-runtime';
 import MfaGate from './mfa-gate';
+import RootAccessibility from './root-accessibility';
 import {I18nProvider,LanguageToggle} from '@/lib/i18n';
 
 export const metadata: Metadata = {
@@ -39,10 +41,12 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en" suppressHydrationWarning>
       <body>
+        <a className="skip-link" href="#app-primary-content">Skip to main content / Saltar al contenido principal</a>
         <I18nProvider>
           <PWARegister />
           <ErrorSanitizer />
           <ProductionTelemetry />
+          <RootAccessibility />
           <div className="global-language-control"><LanguageToggle compact/></div>
           <MfaGate>
             <EmployeeRootRedirect>
@@ -51,7 +55,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
               <NativeRuntime />
               <GlobalActions />
               <AskAgentBridge />
-              {children}
+              <div id="app-primary-content" tabIndex={-1}>{children}</div>
             </EmployeeRootRedirect>
           </MfaGate>
         </I18nProvider>
