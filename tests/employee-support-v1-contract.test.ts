@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 
 const schema=readFileSync('docs/database/employee_support_reports_v1.sql','utf8');
+const hardening=readFileSync('docs/database/employee_support_reports_v1_1.sql','utf8');
 const recovery=readFileSync('docs/database/backup_recovery_employee_support_v1.sql','utf8');
 const ask=readFileSync('app/api/ask/route.ts','utf8');
 const backup=readFileSync('lib/backup-manifest.ts','utf8');
@@ -43,7 +44,7 @@ test('Staff support submission derives identity and employment state from author
   assert.match(schema,/route_value !~ '\^\/\[A-Za-z0-9\/_-\]\*\$'/);
 });
 
-test('support submission retries are content-aware and cannot reuse an id for changed semantics',()=>{
+test('support submission retries are content-aware, serialized, and cannot reuse an id for changed semantics',()=>{
   assert.match(schema,/client_request_id uuid not null/);
   assert.match(schema,/constraint employee_support_reports_user_request_unique unique\(user_id,client_request_id\)/);
   assert.match(schema,/request_fingerprint/);
@@ -51,6 +52,9 @@ test('support submission retries are content-aware and cannot reuse an id for ch
   assert.match(schema,/existing\.request_fingerprint<>fingerprint/);
   assert.match(schema,/request id already used for different report/);
   assert.match(schema,/'deduplicated',true/);
+  assert.match(hardening,/create or replace function public\.submit_employee_support_report/);
+  assert.match(hardening,/pg_advisory_xact_lock\(hashtextextended\(uid::text\|\|':'\|\|p_client_request_id::text,0\)\)/);
+  assert.match(hardening,/select \* into existing from public\.employee_support_reports where user_id=uid and client_request_id=p_client_request_id/);
   assert.match(page,/pending\.current\?\?\{id:crypto\.randomUUID\(\),diagnostics:diagnosticSnapshot\(\)\}/);
   assert.match(page,/pending\.current=attempt/);
   assert.match(page,/function invalidateAttempt\(\)\{pending\.current=null\}/);
@@ -90,6 +94,8 @@ test('support RPCs revoke PUBLIC and anon execution and grant only authenticated
     assert.match(schema,new RegExp(`revoke all on function public\\.${fn}\\([\\s\\S]*?from public,anon,authenticated`));
     assert.match(schema,new RegExp(`grant execute on function public\\.${fn}\\([\\s\\S]*?to authenticated`));
   }
+  assert.match(hardening,/revoke all on function public\.submit_employee_support_report\([\s\S]*?from public,anon,authenticated/);
+  assert.match(hardening,/grant execute on function public\.submit_employee_support_report\([\s\S]*?to authenticated/);
 });
 
 test('support reports are included in a coherent browser and server recovery v5 contract',()=>{
