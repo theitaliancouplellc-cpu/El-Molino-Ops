@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: read
+  actions: read
+  pull-requests: read
 
 concurrency:
   group: cloudflare-production-release
@@ -35,6 +37,14 @@ jobs:
           test "$STAGING_WORKER" != "$PRODUCTION_WORKER"
           test "${#TARGET_SHA}" -eq 40
           printf '%s' "$TARGET_SHA" | grep -Eq '^[0-9a-f]{40}$'
+
+      - name: Require merged-PR release provenance
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          node scripts/verify-main-release-provenance.mjs
 
       - name: Checkout exact main SHA
         uses: actions/checkout@v4
