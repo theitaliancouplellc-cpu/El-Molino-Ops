@@ -10,7 +10,7 @@ const read=(path:string)=>{
 const workflow=read('.github/workflows/deploy-cloudflare.yml');
 const verifier=read('scripts/verify-main-release-provenance.mjs');
 
-test('production release has read-only GitHub evidence permissions and verifies provenance before release work',()=>{
+test('production release has read-only GitHub evidence permissions and verifies provenance before executable release work',()=>{
   assert.match(workflow,/permissions:\s*[\s\S]*?contents: read/);
   assert.match(workflow,/permissions:\s*[\s\S]*?actions: read/);
   assert.match(workflow,/permissions:\s*[\s\S]*?pull-requests: read/);
@@ -18,14 +18,18 @@ test('production release has read-only GitHub evidence permissions and verifies 
   assert.match(workflow,/GITHUB_TOKEN: \$\{\{ github\.token \}\}/);
   assert.match(workflow,/node scripts\/verify-main-release-provenance\.mjs/);
 
-  const provenance=workflow.indexOf('Require merged-PR release provenance');
   const checkout=workflow.indexOf('Checkout exact main SHA');
+  const provenance=workflow.indexOf('Require merged-PR release provenance');
+  const immutable=workflow.indexOf('Prove immutable main source');
+  const build=workflow.indexOf('Build and test exact main SHA');
   const credentials=workflow.indexOf('Require authenticated Cloudflare credentials');
   const staging=workflow.indexOf('Deploy exact main SHA to release-gate Worker');
   const production=workflow.indexOf('Deploy already-built exact SHA to production Worker');
-  assert.ok(provenance>=0);
-  assert.ok(checkout>provenance);
-  assert.ok(credentials>checkout);
+  assert.ok(checkout>=0);
+  assert.ok(provenance>checkout);
+  assert.ok(immutable>provenance);
+  assert.ok(build>immutable);
+  assert.ok(credentials>build);
   assert.ok(staging>credentials);
   assert.ok(production>staging);
 });
