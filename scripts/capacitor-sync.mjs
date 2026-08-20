@@ -54,7 +54,7 @@ if (!requestedPlatforms.includes('android')) {
   // WKAppBoundDomains must match the remote HTTPS origin actually embedded by
   // this native build. Keeping a stale domain here can make an otherwise valid
   // signed app unable to navigate to its configured production server.
-  const productionOrigin = 'https://el-molino-ops.vercel.app';
+  const productionOrigin = 'https://el-molino-ops.el-molino-ops-7537172ca8.workers.dev';
   const configuredOrigin = process.env.CAPACITOR_SERVER_URL || productionOrigin;
   const serverUrl = new URL(configuredOrigin);
   if (serverUrl.protocol !== 'https:') {
